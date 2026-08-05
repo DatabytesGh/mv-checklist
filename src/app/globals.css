@@ -1,0 +1,250 @@
+@import "tailwindcss";
+
+/*
+ * Theming strategy
+ * ----------------
+ * The UI is authored dark-first with the Tailwind `zinc` scale. To get a
+ * polished light mode without rewriting every component, the `zinc` scale and
+ * key surfaces are driven by CSS variables that flip per theme. In light mode
+ * the scale is mirrored (zinc-900 ↔ zinc-100, etc.) so a dark surface like
+ * `bg-zinc-950` becomes a light surface, and light text like `text-zinc-50`
+ * becomes dark — automatically, everywhere.
+ */
+
+:root,
+.dark {
+  color-scheme: dark;
+  --background: #050509;
+  --foreground: #f9fafb;
+  --surface-gradient: radial-gradient(circle at top, #0f172a 0, #020617 60%);
+  --input-bg: #000000;
+  --input-border: #3f3f46;
+  --theme-color: #050509;
+
+  --zinc-50: #fafafa;
+  --zinc-100: #f4f4f5;
+  --zinc-200: #e4e4e7;
+  --zinc-300: #d4d4d8;
+  --zinc-400: #a1a1aa;
+  --zinc-500: #71717a;
+  --zinc-600: #52525b;
+  --zinc-700: #3f3f46;
+  --zinc-800: #27272a;
+  --zinc-900: #18181b;
+  --zinc-950: #09090b;
+}
+
+.light {
+  color-scheme: light;
+  --background: #f6f7f9;
+  --foreground: #18181b;
+  --surface-gradient: radial-gradient(circle at top, #ffffff 0, #eef1f5 70%);
+  --input-bg: #ffffff;
+  --input-border: #d4d4d8;
+  --theme-color: #f6f7f9;
+
+  /* Mirrored zinc scale for light mode */
+  --zinc-50: #09090b;
+  --zinc-100: #18181b;
+  --zinc-200: #27272a;
+  --zinc-300: #3f3f46;
+  --zinc-400: #52525b;
+  --zinc-500: #71717a;
+  --zinc-600: #a1a1aa;
+  --zinc-700: #d4d4d8;
+  --zinc-800: #e4e4e7;
+  --zinc-900: #f4f4f5;
+  --zinc-950: #fafafa;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-accent-200: #bbf7d0;
+  --color-accent-300: #86efac;
+  --color-accent-400: #4ade80;
+  --color-accent-500: #22c55e;
+  --color-accent-600: #16a34a;
+  --color-accent-700: #15803d;
+  --color-accent-800: #166534;
+  --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+
+  --color-zinc-50: var(--zinc-50);
+  --color-zinc-100: var(--zinc-100);
+  --color-zinc-200: var(--zinc-200);
+  --color-zinc-300: var(--zinc-300);
+  --color-zinc-400: var(--zinc-400);
+  --color-zinc-500: var(--zinc-500);
+  --color-zinc-600: var(--zinc-600);
+  --color-zinc-700: var(--zinc-700);
+  --color-zinc-800: var(--zinc-800);
+  --color-zinc-900: var(--zinc-900);
+  --color-zinc-950: var(--zinc-950);
+}
+
+body {
+  background: var(--surface-gradient);
+  background-attachment: fixed;
+  color: var(--foreground);
+  min-height: 100dvh;
+}
+
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(-0.5rem) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+/* Soften heavy dark-tuned shadows in light mode */
+.light .shadow-xl {
+  box-shadow:
+    0 1px 2px rgb(24 24 27 / 0.04),
+    0 4px 12px rgb(24 24 27 / 0.06);
+}
+.light .shadow-lg {
+  box-shadow: 0 2px 8px rgb(24 24 27 / 0.06);
+}
+
+/** Main scroll area — bottom space for tab bar + floating banners */
+.page-main {
+  padding-top: 0.5rem;
+  padding-bottom: calc(9rem + env(safe-area-inset-bottom, 0px));
+  padding-left: max(1rem, env(safe-area-inset-left, 0px));
+  padding-right: max(1rem, env(safe-area-inset-right, 0px));
+}
+
+/** Fixed centered title bar (mobile / PWA only) */
+.mobile-title-bar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 25;
+  padding-top: env(safe-area-inset-top, 0px);
+}
+
+/* Match fixed bar: safe area + min-h 3.25rem + py-2 */
+.mobile-title-spacer {
+  height: calc(4.25rem + env(safe-area-inset-top, 0px));
+  flex-shrink: 0;
+}
+
+.mobile-title-spacer--with-desc {
+  height: calc(4.75rem + env(safe-area-inset-top, 0px));
+}
+
+.mobile-title-spacer--with-children {
+  height: calc(5.25rem + env(safe-area-inset-top, 0px));
+}
+
+/* Title bar that also carries a sticky strip (e.g. progress bar) below the title. */
+.mobile-title-spacer--with-sticky {
+  height: calc(7.5rem + env(safe-area-inset-top, 0px));
+}
+
+/* Height of the fixed mobile bottom nav, used to stack the action bar above it. */
+:root {
+  --mv-mobile-nav-h: calc(3.15rem + max(1rem, env(safe-area-inset-bottom, 0px)));
+}
+
+/* Primary-action bar (e.g. Submit). On mobile it's a solid band lifted just
+   above the bottom nav. On desktop the button floats free near the bottom with
+   no background band, and clicks pass through the empty area to the content. */
+.checklist-action-bar {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: calc(var(--mv-mobile-nav-h) + 0.5rem);
+  z-index: 30;
+  display: flex;
+  justify-content: center;
+  padding: 0.75rem 1rem;
+}
+
+@media (max-width: 767px) {
+  .checklist-action-bar {
+    border-top: 1px solid rgb(39 39 42 / 0.6);
+    background: var(--background);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+  }
+}
+
+@media (min-width: 768px) {
+  .page-main {
+    padding-top: 1.5rem;
+    padding-bottom: 2rem;
+    padding-left: 1rem;
+    padding-right: 1rem;
+  }
+
+  .mobile-title-bar {
+    display: none;
+  }
+
+  .mobile-title-spacer {
+    display: none;
+    height: 0;
+  }
+
+  .checklist-action-bar {
+    left: 14rem;
+    bottom: 1.5rem;
+    pointer-events: none;
+  }
+  .checklist-action-bar > * {
+    pointer-events: auto;
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+.input-field {
+  border-radius: 1rem;
+  border: 1px solid var(--input-border);
+  background-color: var(--input-bg);
+  padding: 0.75rem 1rem;
+  font-size: 0.875rem;
+  color: var(--foreground);
+  outline: none;
+  width: 100%;
+  min-height: 44px;
+}
+.input-field::placeholder {
+  color: var(--zinc-500);
+}
+.input-field:focus {
+  border-color: var(--color-accent-500);
+}
+
+/* Custom-styled native selects */
+select.input-field {
+  appearance: none;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  cursor: pointer;
+  padding-right: 2.75rem;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%2371717a' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 0.9rem center;
+  background-size: 1rem;
+}
+select.input-field:hover {
+  border-color: var(--zinc-600);
+}
+select.input-field option {
+  background-color: var(--input-bg);
+  color: var(--foreground);
+}
+
+.tap-target {
+  min-height: 44px;
+  min-width: 44px;
+}

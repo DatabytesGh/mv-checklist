@@ -1,0 +1,38 @@
+# Dependencies
+node_modules/
+.pnp
+.pnp.js
+
+# Next.js
+.next/
+out/
+build/
+dist/
+
+# Env / secrets — never commit
+.env
+.env.local
+.env.*.local
+!.env.example
+
+# SQLite data & runtime
+data/*.db
+data/*.db-*
+certs/
+public/uploads/
+
+# Logs / OS / IDE
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.DS_Store
+Thumbs.db
+*.pem
+.vscode/
+.idea/
+tsconfig.tsbuildinfo
+
+# Misc local
+fid.txt
+*.log
+Checklists/
