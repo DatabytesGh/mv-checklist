@@ -3,7 +3,7 @@ module.exports = {
     {
       name: "mv-checklist",
       script: "server.mjs",
-      cwd: "/var/www/mv-checklist",
+      // cwd set by `pm2 start` from the app directory
       env: {
         NODE_ENV: "production",
         PORT: "3004",
