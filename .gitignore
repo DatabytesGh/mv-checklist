@@ -35,4 +35,5 @@ tsconfig.tsbuildinfo
 # Misc local
 fid.txt
 *.log
-Checklists/
+# Source PDF/txt dumps at repo root only (not src/app/checklists routes)
+/Checklists/

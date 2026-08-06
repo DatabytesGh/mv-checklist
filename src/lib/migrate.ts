@@ -177,49 +177,61 @@ export function runMigrations(
   `);
 
   // In shared mode the `users` table lives in the inventory DB and is exposed
-  // via a temp view, so skip all local users-table setup here.
-  if (opts.skipUsers) {
-    const row = db
-      .prepare("SELECT version FROM cl_schema_version WHERE id = 1")
-      .get() as { version: number } | undefined;
-    if (!row) {
-      db.prepare("INSERT INTO cl_schema_version (id, version) VALUES (1, 1)").run();
+  // via a temp view — skip local users-table creation only. Schema self-heals
+  // for checklist_types / sessions / conferences must still run below.
+  if (!opts.skipUsers) {
+    const hasUsers = db
+      .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='users'")
+      .get();
+    if (!hasUsers) {
+      db.exec(`
+        CREATE TABLE users (
+          id TEXT PRIMARY KEY,
+          username TEXT NOT NULL UNIQUE,
+          password TEXT NOT NULL,
+          role TEXT NOT NULL,
+          display_name TEXT,
+          phone TEXT,
+          active INTEGER NOT NULL DEFAULT 1,
+          checklist_only INTEGER NOT NULL DEFAULT 0,
+          must_change_password INTEGER NOT NULL DEFAULT 0,
+          inventory_user_id TEXT,
+          created_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+      `);
+    } else if (!usesInventoryUserSchema(db)) {
+      const cols = db.prepare("PRAGMA table_info(users)").all() as Array<{
+        name: string;
+      }>;
+      const names = new Set(cols.map((c) => c.name));
+      if (!names.has("checklist_only")) {
+        db.exec(
+          `ALTER TABLE users ADD COLUMN checklist_only INTEGER NOT NULL DEFAULT 0`,
+        );
+      }
+      if (!names.has("must_change_password")) {
+        db.exec(
+          `ALTER TABLE users ADD COLUMN must_change_password INTEGER NOT NULL DEFAULT 0`,
+        );
+      }
     }
-    return;
-  }
 
-  const hasUsers = db
-    .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='users'")
-    .get();
-  if (!hasUsers) {
-    db.exec(`
-      CREATE TABLE users (
-        id TEXT PRIMARY KEY,
-        username TEXT NOT NULL UNIQUE,
-        password TEXT NOT NULL,
-        role TEXT NOT NULL,
-        display_name TEXT,
-        phone TEXT,
-        active INTEGER NOT NULL DEFAULT 1,
-        checklist_only INTEGER NOT NULL DEFAULT 0,
-        inventory_user_id TEXT,
-        created_at TEXT NOT NULL DEFAULT (datetime('now'))
-      );
-    `);
-  } else if (!usesInventoryUserSchema(db)) {
-    const cols = db.prepare("PRAGMA table_info(users)").all() as Array<{ name: string }>;
-    const names = new Set(cols.map((c) => c.name));
-    if (!names.has("checklist_only")) {
-      db.exec(`ALTER TABLE users ADD COLUMN checklist_only INTEGER NOT NULL DEFAULT 0`);
-    }
-  }
-
-  // Shared inventory DB: ensure checklist_only column exists
-  if (usesInventoryUserSchema(db)) {
-    const cols = db.prepare("PRAGMA table_info(users)").all() as Array<{ name: string }>;
-    const names = new Set(cols.map((c) => c.name));
-    if (!names.has("checklist_only")) {
-      db.exec(`ALTER TABLE users ADD COLUMN checklist_only INTEGER NOT NULL DEFAULT 0`);
+    // Standalone inventory-shaped users table: ensure checklist_only / force-change exist
+    if (usesInventoryUserSchema(db)) {
+      const cols = db.prepare("PRAGMA table_info(users)").all() as Array<{
+        name: string;
+      }>;
+      const names = new Set(cols.map((c) => c.name));
+      if (!names.has("checklist_only")) {
+        db.exec(
+          `ALTER TABLE users ADD COLUMN checklist_only INTEGER NOT NULL DEFAULT 0`,
+        );
+      }
+      if (!names.has("must_change_password")) {
+        db.exec(
+          `ALTER TABLE users ADD COLUMN must_change_password INTEGER NOT NULL DEFAULT 0`,
+        );
+      }
     }
   }
 

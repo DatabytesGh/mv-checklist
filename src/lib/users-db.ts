@@ -65,4 +65,9 @@ export function ensureSharedUserColumns(db: Database.Database): void {
   if (!names.has("phone")) {
     db.exec("ALTER TABLE inv.users ADD COLUMN phone TEXT");
   }
+  if (!names.has("must_change_password")) {
+    db.exec(
+      "ALTER TABLE inv.users ADD COLUMN must_change_password INTEGER NOT NULL DEFAULT 0",
+    );
+  }
 }

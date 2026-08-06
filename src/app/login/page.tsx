@@ -19,13 +19,15 @@ export default function LoginPage() {
   const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
-    const ok = await login(username.trim(), password.trim());
+    const sessionUser = await login(username.trim(), password.trim());
     setLoading(false);
-    if (!ok) {
+    if (!sessionUser) {
       setError("Invalid credentials or inactive user.");
       return;
     }
-    router.replace("/");
+    router.replace(
+      sessionUser.must_change_password ? "/change-password" : "/",
+    );
   };
 
   return (

@@ -9,9 +9,10 @@ import { InstallAppPrompt } from "./install-app-prompt";
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
-  const isLogin = pathname === "/login";
+  const bare =
+    pathname === "/login" || pathname === "/change-password";
 
-  if (isLogin) return <>{children}</>;
+  if (bare) return <>{children}</>;
 
   return (
     <div className="min-h-screen">

@@ -11,12 +11,25 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const mounted = useMounted();
   const isLogin = pathname === "/login";
+  const isChangePassword = pathname === "/change-password";
 
   useEffect(() => {
     if (!mounted || loading) return;
-    if (!user && !isLogin) router.replace("/login");
-    if (user && isLogin) router.replace("/");
-  }, [user, loading, isLogin, router, mounted]);
+
+    if (!user && !isLogin) {
+      router.replace("/login");
+      return;
+    }
+
+    if (user?.must_change_password) {
+      if (!isChangePassword) router.replace("/change-password");
+      return;
+    }
+
+    if (user && (isLogin || isChangePassword)) {
+      router.replace("/");
+    }
+  }, [user, loading, isLogin, isChangePassword, router, mounted]);
 
   return <>{children}</>;
 }

@@ -537,8 +537,8 @@ export function syncMissingTemplateItems(db: Database.Database): void {
   );
   const insertType = db.prepare(
     `INSERT INTO checklist_types
-       (slug, label, icon, department_tag, frequency, completer_role, approver_role, is_system, display_order)
-     VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?)`,
+       (id, slug, label, icon, department_tag, frequency, completer_role, approver_role, is_system, display_order, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?, datetime('now'))`,
   );
   const itemExists = db.prepare(
     `SELECT 1 AS ok FROM checklist_templates
@@ -559,6 +559,7 @@ export function syncMissingTemplateItems(db: Database.Database): void {
     for (const ct of CHECKLIST_TYPES) {
       if (!typeExists.get(ct.slug)) {
         insertType.run(
+          `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
           ct.slug,
           ct.label,
           ct.icon,
@@ -612,9 +613,10 @@ export function seedIfEmpty(db: Database.Database): void {
 
     for (const ct of CHECKLIST_TYPES) {
       db.prepare(
-        `INSERT INTO checklist_types (slug, label, icon, department_tag, frequency, completer_role, approver_role, is_system, display_order)
-         VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?)`,
+        `INSERT INTO checklist_types (id, slug, label, icon, department_tag, frequency, completer_role, approver_role, is_system, display_order, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?, datetime('now'))`,
       ).run(
+        `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
         ct.slug,
         ct.label,
         ct.icon,

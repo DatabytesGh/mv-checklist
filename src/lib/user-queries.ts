@@ -18,7 +18,14 @@ type RawUser = {
   active: number;
   password?: string;
   password_hash?: string;
+  must_change_password?: number;
 };
+
+function mustChangeSelect(cols: Set<string>): string {
+  return cols.has("must_change_password")
+    ? "must_change_password"
+    : "0 as must_change_password";
+}
 
 function mapToSessionUser(
   db: Database.Database,
@@ -32,6 +39,7 @@ function mapToSessionUser(
     display_name: row.display_name,
     phone: row.phone ?? undefined,
     permissions,
+    must_change_password: !!row.must_change_password,
   };
 }
 
@@ -42,17 +50,21 @@ export function selectUserById(
   if (usesInventoryUserSchema(db)) {
     const cols = usersTableColumns(db);
     const phoneSelect = cols.has("phone") ? "phone" : "NULL as phone";
+    const forceSelect = mustChangeSelect(cols);
     return db
       .prepare(
         `SELECT id, username, role, full_name as display_name, ${phoneSelect},
-                is_active as active
+                is_active as active, ${forceSelect}
          FROM users WHERE id = ?`,
       )
       .get(id) as RawUser | undefined;
   }
+  const cols = usersTableColumns(db);
+  const forceSelect = mustChangeSelect(cols);
   return db
     .prepare(
-      `SELECT id, username, role, display_name, phone, active FROM users WHERE id = ?`,
+      `SELECT id, username, role, display_name, phone, active, ${forceSelect}
+       FROM users WHERE id = ?`,
     )
     .get(id) as RawUser | undefined;
 }
@@ -64,17 +76,21 @@ export function selectUserByUsername(
   if (usesInventoryUserSchema(db)) {
     const cols = usersTableColumns(db);
     const phoneSelect = cols.has("phone") ? "phone" : "NULL as phone";
+    const forceSelect = mustChangeSelect(cols);
     return db
       .prepare(
         `SELECT id, username, password_hash, role, full_name as display_name,
-                ${phoneSelect}, is_active as active
+                ${phoneSelect}, is_active as active, ${forceSelect}
          FROM users WHERE username = ? COLLATE NOCASE`,
       )
       .get(username.trim()) as RawUser | undefined;
   }
+  const cols = usersTableColumns(db);
+  const forceSelect = mustChangeSelect(cols);
   return db
     .prepare(
-      `SELECT id, username, password as password_hash, role, display_name, phone, active
+      `SELECT id, username, password as password_hash, role, display_name, phone, active,
+              ${forceSelect}
        FROM users WHERE username = ? COLLATE NOCASE`,
     )
     .get(username.trim()) as RawUser | undefined;
@@ -132,17 +148,21 @@ export function listAllUsers(db: Database.Database) {
   if (usesInventoryUserSchema(db)) {
     const cols = usersTableColumns(db);
     const phoneSelect = cols.has("phone") ? "phone" : "NULL as phone";
+    const forceSelect = mustChangeSelect(cols);
     return db
       .prepare(
         `SELECT id, username, role, full_name as display_name, ${phoneSelect},
-                is_active as active, checklist_only
+                is_active as active, checklist_only, ${forceSelect}
          FROM users ORDER BY username`,
       )
       .all();
   }
+  const cols = usersTableColumns(db);
+  const forceSelect = mustChangeSelect(cols);
   return db
     .prepare(
-      `SELECT id, username, role, display_name, phone, active, checklist_only FROM users ORDER BY username`,
+      `SELECT id, username, role, display_name, phone, active, checklist_only, ${forceSelect}
+       FROM users ORDER BY username`,
     )
     .all();
 }
@@ -160,12 +180,13 @@ export function insertUser(
   },
 ) {
   const table = usersWriteTable(db);
+  // New accounts always require a password change on first login.
   if (usesInventoryUserSchema(db)) {
     const cols = usersTableColumns(db);
     if (cols.has("phone")) {
       db.prepare(
-        `INSERT INTO ${table} (id, username, password_hash, full_name, role, is_active, checklist_only, phone, created_at)
-         VALUES (?, ?, ?, ?, ?, 1, ?, ?, datetime('now'))`,
+        `INSERT INTO ${table} (id, username, password_hash, full_name, role, is_active, checklist_only, phone, must_change_password, created_at)
+         VALUES (?, ?, ?, ?, ?, 1, ?, ?, 1, datetime('now'))`,
       ).run(
         data.id,
         data.username,
@@ -177,8 +198,8 @@ export function insertUser(
       );
     } else {
       db.prepare(
-        `INSERT INTO ${table} (id, username, password_hash, full_name, role, is_active, checklist_only, created_at)
-         VALUES (?, ?, ?, ?, ?, 1, ?, datetime('now'))`,
+        `INSERT INTO ${table} (id, username, password_hash, full_name, role, is_active, checklist_only, must_change_password, created_at)
+         VALUES (?, ?, ?, ?, ?, 1, ?, 1, datetime('now'))`,
       ).run(
         data.id,
         data.username,
@@ -191,8 +212,8 @@ export function insertUser(
     return;
   }
   db.prepare(
-    `INSERT INTO ${table} (id, username, password, role, display_name, phone, active, checklist_only)
-     VALUES (?, ?, ?, ?, ?, ?, 1, ?)`,
+    `INSERT INTO ${table} (id, username, password, role, display_name, phone, active, checklist_only, must_change_password)
+     VALUES (?, ?, ?, ?, ?, ?, 1, ?, 1)`,
   ).run(
     data.id,
     data.username,
@@ -215,16 +236,28 @@ export function updateUser(
     active: boolean;
     checklist_only: boolean;
     phone?: string;
+    /** When true (or when a new password is set), force change on next login. */
+    must_change_password?: boolean;
   },
 ) {
   const table = usersWriteTable(db);
+  const cols = usersTableColumns(db);
+  const hasForce = cols.has("must_change_password");
+  // Admin-set password always forces a change; explicit flag can force without
+  // changing the password; otherwise leave the existing flag alone.
+  const forceOnPassword = Boolean(data.password?.trim());
+  const forceExplicit = data.must_change_password === true;
+  const setForce = hasForce && (forceOnPassword || forceExplicit);
+  const clearForce = hasForce && data.must_change_password === false && !forceOnPassword;
+
   if (usesInventoryUserSchema(db)) {
-    const cols = usersTableColumns(db);
     const hasPhone = cols.has("phone");
     if (data.password) {
       if (hasPhone) {
         db.prepare(
-          `UPDATE ${table} SET username=?, password_hash=?, role=?, full_name=?, is_active=?, checklist_only=?, phone=? WHERE id=?`,
+          `UPDATE ${table} SET username=?, password_hash=?, role=?, full_name=?, is_active=?, checklist_only=?, phone=?${
+            setForce ? ", must_change_password=1" : ""
+          } WHERE id=?`,
         ).run(
           data.username,
           hashPassword(data.password),
@@ -237,7 +270,9 @@ export function updateUser(
         );
       } else {
         db.prepare(
-          `UPDATE ${table} SET username=?, password_hash=?, role=?, full_name=?, is_active=?, checklist_only=? WHERE id=?`,
+          `UPDATE ${table} SET username=?, password_hash=?, role=?, full_name=?, is_active=?, checklist_only=?${
+            setForce ? ", must_change_password=1" : ""
+          } WHERE id=?`,
         ).run(
           data.username,
           hashPassword(data.password),
@@ -250,7 +285,13 @@ export function updateUser(
       }
     } else if (hasPhone) {
       db.prepare(
-        `UPDATE ${table} SET username=?, role=?, full_name=?, is_active=?, checklist_only=?, phone=? WHERE id=?`,
+        `UPDATE ${table} SET username=?, role=?, full_name=?, is_active=?, checklist_only=?, phone=?${
+          setForce
+            ? ", must_change_password=1"
+            : clearForce
+              ? ", must_change_password=0"
+              : ""
+        } WHERE id=?`,
       ).run(
         data.username,
         data.role,
@@ -262,7 +303,13 @@ export function updateUser(
       );
     } else {
       db.prepare(
-        `UPDATE ${table} SET username=?, role=?, full_name=?, is_active=?, checklist_only=? WHERE id=?`,
+        `UPDATE ${table} SET username=?, role=?, full_name=?, is_active=?, checklist_only=?${
+          setForce
+            ? ", must_change_password=1"
+            : clearForce
+              ? ", must_change_password=0"
+              : ""
+        } WHERE id=?`,
       ).run(
         data.username,
         data.role,
@@ -274,9 +321,12 @@ export function updateUser(
     }
     return;
   }
+
   if (data.password) {
     db.prepare(
-      `UPDATE ${table} SET username=?, password=?, role=?, display_name=?, phone=?, active=?, checklist_only=? WHERE id=?`,
+      `UPDATE ${table} SET username=?, password=?, role=?, display_name=?, phone=?, active=?, checklist_only=?${
+        setForce ? ", must_change_password=1" : ""
+      } WHERE id=?`,
     ).run(
       data.username,
       data.password,
@@ -289,7 +339,13 @@ export function updateUser(
     );
   } else {
     db.prepare(
-      `UPDATE ${table} SET username=?, role=?, display_name=?, phone=?, active=?, checklist_only=? WHERE id=?`,
+      `UPDATE ${table} SET username=?, role=?, display_name=?, phone=?, active=?, checklist_only=?${
+        setForce
+          ? ", must_change_password=1"
+          : clearForce
+            ? ", must_change_password=0"
+            : ""
+      } WHERE id=?`,
     ).run(
       data.username,
       data.role,
@@ -300,4 +356,27 @@ export function updateUser(
       data.id,
     );
   }
+}
+
+/** User-initiated password change — clears the force-change flag. */
+export function changeOwnPassword(
+  db: Database.Database,
+  userId: string,
+  newPassword: string,
+): void {
+  const table = usersWriteTable(db);
+  const cols = usersTableColumns(db);
+  const hasForce = cols.has("must_change_password");
+  const forceClear = hasForce ? ", must_change_password=0" : "";
+
+  if (usesInventoryUserSchema(db)) {
+    db.prepare(
+      `UPDATE ${table} SET password_hash=?${forceClear} WHERE id=?`,
+    ).run(hashPassword(newPassword), userId);
+    return;
+  }
+  db.prepare(`UPDATE ${table} SET password=?${forceClear} WHERE id=?`).run(
+    newPassword,
+    userId,
+  );
 }

@@ -13,7 +13,10 @@ import type { SessionUser } from "@/lib/types";
 interface AuthContextValue {
   user: SessionUser | null;
   loading: boolean;
-  login: (username: string, password: string) => Promise<boolean>;
+  login: (
+    username: string,
+    password: string,
+  ) => Promise<SessionUser | null>;
   logout: () => Promise<void>;
   refresh: () => Promise<void>;
 }
@@ -54,10 +57,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       body: JSON.stringify({ username, password }),
     });
     setLoading(false);
-    if (!res.ok) return false;
+    if (!res.ok) return null;
     const data = await res.json();
-    setUser(data.user);
-    return true;
+    const nextUser = (data.user as SessionUser | null) ?? null;
+    setUser(nextUser);
+    return nextUser;
   }, []);
 
   const logout = useCallback(async () => {

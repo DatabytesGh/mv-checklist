@@ -67,8 +67,17 @@ export async function PATCH(req: NextRequest) {
     phone: body.phone,
     active: !!body.active,
     checklist_only: !!body.checklist_only,
+    must_change_password:
+      typeof body.must_change_password === "boolean"
+        ? body.must_change_password
+        : undefined,
   });
 
-  logAudit(user.id, "user_updated", "user", String(body.id));
+  const details = body.password?.trim()
+    ? "password reset — must change on next login"
+    : body.must_change_password === true
+      ? "force password change on next login"
+      : undefined;
+  logAudit(user.id, "user_updated", "user", String(body.id), details);
   return NextResponse.json({ ok: true });
 }

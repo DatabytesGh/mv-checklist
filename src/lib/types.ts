@@ -187,4 +187,6 @@ export interface SessionUser {
   display_name?: string;
   phone?: string;
   permissions: ChecklistPermissions;
+  /** When true, the user must set a new password before using the app. */
+  must_change_password?: boolean;
 }

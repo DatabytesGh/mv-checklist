@@ -25,6 +25,7 @@ type UserRow = {
   active: number;
   checklist_only: number;
   phone?: string | null;
+  must_change_password?: number;
 };
 
 type RoleRow = {
@@ -50,6 +51,7 @@ const EMPTY_FORM = {
   active: true,
   checklist_only: true,
   phone: "",
+  must_change_password: true,
 };
 
 export default function SettingsUsersPage() {
@@ -98,6 +100,7 @@ export default function SettingsUsersPage() {
       active: !!u.active,
       checklist_only: !!u.checklist_only,
       phone: u.phone ?? "",
+      must_change_password: !!u.must_change_password,
     });
     setModalOpen(true);
   };
@@ -182,6 +185,9 @@ export default function SettingsUsersPage() {
               <div className="hidden items-center gap-2 sm:flex">
                 <Pill>{roleLabel(u.role)}</Pill>
                 {u.checklist_only ? <Pill tone="sky">Checklist-only</Pill> : null}
+                {u.must_change_password ? (
+                  <Pill tone="amber">Must change password</Pill>
+                ) : null}
               </div>
               <Pill tone={u.active ? "green" : "red"}>
                 {u.active ? "Active" : "Inactive"}
@@ -206,8 +212,8 @@ export default function SettingsUsersPage() {
         title={editingId ? "Edit member" : "Add member"}
         description={
           editingId
-            ? "Update this member's details and access."
-            : "Create a new account for a staff member."
+            ? "Update this member's details and access. Setting a new password forces them to change it on next login."
+            : "Create a new account. They will be prompted to change the temporary password on first login."
         }
         footer={
           <>
@@ -239,19 +245,31 @@ export default function SettingsUsersPage() {
               <input
                 className="input-field"
                 value={form.username}
-                disabled={!!editingId}
                 onChange={(e) => setForm({ ...form, username: e.target.value })}
               />
             </Field>
             <Field
-              label={editingId ? "New password" : "Password"}
-              hint={editingId ? "Leave blank to keep current" : undefined}
+              label={editingId ? "Reset password" : "Temporary password"}
+              hint={
+                editingId
+                  ? "Leave blank to keep current. Filling this in resets their password and requires a change on next login."
+                  : "Give this to the staff member — they must change it on first login."
+              }
             >
               <input
                 className="input-field"
                 type="password"
                 value={form.password}
-                onChange={(e) => setForm({ ...form, password: e.target.value })}
+                onChange={(e) =>
+                  setForm({
+                    ...form,
+                    password: e.target.value,
+                    // Setting a password always implies force-change.
+                    must_change_password: e.target.value.trim()
+                      ? true
+                      : form.must_change_password,
+                  })
+                }
               />
             </Field>
           </div>
@@ -298,6 +316,17 @@ export default function SettingsUsersPage() {
               description="Cannot access the inventory app"
               checked={form.checklist_only}
               onChange={(v) => setForm({ ...form, checklist_only: v })}
+            />
+            <ToggleRow
+              label="Must change password"
+              description={
+                editingId
+                  ? "Prompt them to set a new password the next time they sign in"
+                  : "Always on for new members — they change the temporary password on first login"
+              }
+              checked={form.must_change_password}
+              onChange={(v) => setForm({ ...form, must_change_password: v })}
+              disabled={!editingId || !!form.password.trim()}
             />
           </div>
         </div>
