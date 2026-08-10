@@ -10,22 +10,43 @@ export function ProgressBar({
   na?: number;
   notDone?: number;
 }) {
-  const pct = total > 0 ? Math.round((completed / total) * 100) : 0;
+  const completedPct = total > 0 ? (completed / total) * 100 : 0;
+  const naPct = total > 0 ? (na / total) * 100 : 0;
+  const displayPct = Math.round(completedPct);
+  const fullyComplete = total > 0 && completed === total;
+
   return (
     <div className="space-y-1">
       <div className="flex justify-between text-[11px] text-zinc-500">
         <span>
-          {completed} / {total} done
-          {notDone > 0 ? ` · ${notDone} not done` : ""}
-          {na > 0 ? ` · ${na} N/A` : ""}
+          {fullyComplete
+            ? "100% complete"
+            : `${completed} / ${total} done`}
+          {!fullyComplete && notDone > 0 ? ` · ${notDone} not done` : ""}
+          {!fullyComplete && na > 0 ? ` · ${na} N/A` : ""}
         </span>
-        <span>{pct}%</span>
+        <span
+          className={
+            fullyComplete
+              ? "font-medium text-accent-700 dark:text-accent-300"
+              : undefined
+          }
+        >
+          {fullyComplete ? "100%" : `${displayPct}%`}
+        </span>
       </div>
-      <div className="h-2 overflow-hidden rounded-full bg-zinc-800">
+      <div className="flex h-2 overflow-hidden rounded-full bg-zinc-800">
         <div
-          className="h-full rounded-full bg-accent-500 transition-all"
-          style={{ width: `${pct}%` }}
+          className="h-full bg-accent-500 transition-all"
+          style={{ width: `${completedPct}%` }}
         />
+        {naPct > 0 && (
+          <div
+            className="h-full bg-amber-500 transition-all dark:bg-amber-400"
+            style={{ width: `${naPct}%` }}
+            title={`${na} not applicable`}
+          />
+        )}
       </div>
     </div>
   );
