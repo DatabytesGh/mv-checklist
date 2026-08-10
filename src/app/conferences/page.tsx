@@ -9,8 +9,9 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/card";
 import { PageHeader } from "@/components/layout/page-header";
+import { ConfirmDialog } from "@/components/settings/settings-ui";
 import { ListRowsSkeleton, PageHeaderSkeleton } from "@/components/loading/page-skeletons";
-import { Calendar, CheckCircle2 } from "lucide-react";
+import { Calendar, CheckCircle2, Trash2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface Conference {
@@ -41,6 +42,9 @@ export default function ConferencesPage() {
   const [showForm, setShowForm] = useState(false);
   const [creating, setCreating] = useState(false);
   const [form, setForm] = useState(EMPTY_FORM);
+  const [deleteTarget, setDeleteTarget] = useState<Conference | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  const isAdmin = user?.role === "admin";
 
   const load = () =>
     fetch("/api/conferences")
@@ -53,6 +57,28 @@ export default function ConferencesPage() {
   useEffect(() => {
     load().finally(() => setReady(true));
   }, []);
+
+  const confirmDelete = async () => {
+    if (!deleteTarget || deleting) return;
+    setDeleting(true);
+    try {
+      const res = await fetch(`/api/conferences/${deleteTarget.id}`, {
+        method: "DELETE",
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        toast.error(err.error ?? "Could not delete conference");
+        return;
+      }
+      toast.success(`Deleted “${deleteTarget.name}”`);
+      setDeleteTarget(null);
+      await load();
+    } catch {
+      toast.error("Connection lost — try again");
+    } finally {
+      setDeleting(false);
+    }
+  };
 
   const create = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -224,7 +250,13 @@ export default function ConferencesPage() {
             </h2>
             <div className="flex flex-col gap-4">
               {past.map((c) => (
-                <ConferenceRow key={c.id} conference={c} past />
+                <ConferenceRow
+                  key={c.id}
+                  conference={c}
+                  past
+                  canDelete={isAdmin}
+                  onDelete={() => setDeleteTarget(c)}
+                />
               ))}
             </div>
           </section>
@@ -242,6 +274,21 @@ export default function ConferencesPage() {
           </div>
         )}
       </div>
+
+      <ConfirmDialog
+        open={!!deleteTarget}
+        onClose={() => setDeleteTarget(null)}
+        onConfirm={confirmDelete}
+        title="Delete conference?"
+        message={
+          deleteTarget
+            ? `“${deleteTarget.name}” and its linked checklists will be permanently removed. Fault history is kept.`
+            : ""
+        }
+        confirmLabel="Delete"
+        destructive
+        loading={deleting}
+      />
     </div>
   );
 }
@@ -249,61 +296,65 @@ export default function ConferencesPage() {
 function ConferenceRow({
   conference: c,
   past = false,
+  canDelete = false,
+  onDelete,
 }: {
   conference: Conference;
   past?: boolean;
+  canDelete?: boolean;
+  onDelete?: () => void;
 }) {
   const progress = c.checklistProgress ?? { total: 0, approved: 0 };
   const allDone = progress.total > 0 && progress.approved === progress.total;
 
   return (
-    <Link href={`/conferences/${c.id}`} className="block">
-      <Card
-        className={cn(
-          "transition-colors",
-          past
-            ? "border-zinc-800/60 bg-zinc-950/40 opacity-70 hover:opacity-100 hover:border-zinc-700"
-            : "hover:border-zinc-700",
-        )}
-      >
-        <CardContent className="flex items-center justify-between gap-3 py-5">
-          <div className="min-w-0 flex-1">
-            <div className="flex flex-wrap items-center gap-2">
-              <h3
-                className={cn(
-                  "font-medium",
-                  past ? "text-zinc-400" : "text-zinc-100",
-                )}
-              >
-                {c.name}
-              </h3>
-              {allDone && (
-                <span
-                  className={cn(
-                    "inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-medium",
-                    past
-                      ? "border-emerald-500/20 bg-emerald-500/5 text-emerald-500/80"
-                      : "border-emerald-500/40 bg-emerald-500/10 text-emerald-300",
-                  )}
-                >
-                  <CheckCircle2 className="h-3 w-3" />
-                  Checklists Completed
-                </span>
-              )}
-            </div>
-            <p
+    <Card
+      className={cn(
+        "transition-colors",
+        past
+          ? "border-zinc-800/60 bg-zinc-950/40 opacity-70 hover:opacity-100 hover:border-zinc-700"
+          : "hover:border-zinc-700",
+      )}
+    >
+      <CardContent className="flex items-center justify-between gap-3 py-5">
+        <Link href={`/conferences/${c.id}`} className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-2">
+            <h3
               className={cn(
-                "mt-1 text-sm",
-                past ? "text-zinc-600" : "text-zinc-500",
+                "font-medium",
+                past ? "text-zinc-400" : "text-zinc-100",
               )}
             >
-              {formatDateRange(c.start_date, c.end_date)}
-              {c.guest_count ? ` · ${c.guest_count} guests` : ""}
-            </p>
+              {c.name}
+            </h3>
+            {allDone && (
+              <span
+                className={cn(
+                  "inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-medium",
+                  past
+                    ? "border-emerald-500/20 bg-emerald-500/5 text-emerald-500/80"
+                    : "border-emerald-500/40 bg-emerald-500/10 text-emerald-300",
+                )}
+              >
+                <CheckCircle2 className="h-3 w-3" />
+                Checklists Completed
+              </span>
+            )}
           </div>
+          <p
+            className={cn(
+              "mt-1 text-sm",
+              past ? "text-zinc-600" : "text-zinc-500",
+            )}
+          >
+            {formatDateRange(c.start_date, c.end_date)}
+            {c.guest_count ? ` · ${c.guest_count} guests` : ""}
+          </p>
+        </Link>
+        <div className="flex shrink-0 items-center gap-2">
           <Badge
             className={cn(
-              "border shrink-0",
+              "border",
               past
                 ? "border-zinc-800 bg-zinc-900/50 text-zinc-500"
                 : "border-zinc-700 bg-zinc-900 text-zinc-300",
@@ -311,9 +362,23 @@ function ConferenceRow({
           >
             {past ? "Completed" : c.status}
           </Badge>
-        </CardContent>
-      </Card>
-    </Link>
+          {canDelete && onDelete ? (
+            <Button
+              type="button"
+              size="sm"
+              variant="ghost"
+              aria-label={`Delete ${c.name}`}
+              icon={<Trash2 className="h-4 w-4 text-red-400" />}
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                onDelete();
+              }}
+            />
+          ) : null}
+        </div>
+      </CardContent>
+    </Card>
   );
 }
 

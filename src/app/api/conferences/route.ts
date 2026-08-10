@@ -12,7 +12,9 @@ export async function GET() {
 
   const db = getDb();
   const conferences = db
-    .prepare(`SELECT * FROM conferences ORDER BY start_date DESC`)
+    .prepare(
+      `SELECT * FROM conferences ORDER BY datetime(created_at) DESC, id DESC`,
+    )
     .all() as Array<{ id: number }>;
 
   // Roll up each conference's checklist state so the list can show a

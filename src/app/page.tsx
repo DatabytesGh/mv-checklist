@@ -52,6 +52,7 @@ interface UpcomingConference {
   start_date: string;
   end_date: string;
   guest_count: number | null;
+  created_at?: string;
   checklistProgress?: {
     total: number;
     approved: number;
@@ -627,26 +628,16 @@ function UpcomingConferenceCard({
   );
 }
 
-/** Active/live first, then soonest start date (approaching). */
+/** Newest conferences first (by created_at, then id). */
 function sortUpcomingConferences(
   conferences: UpcomingConference[],
 ): UpcomingConference[] {
   return [...conferences].sort((a, b) => {
-    const rankA = conferenceUrgencyRank(a.status, a.start_date, a.end_date);
-    const rankB = conferenceUrgencyRank(b.status, b.start_date, b.end_date);
-    if (rankA !== rankB) return rankA - rankB;
-    return a.start_date.localeCompare(b.start_date);
+    const ca = a.created_at ?? "";
+    const cb = b.created_at ?? "";
+    if (ca && cb && ca !== cb) return cb.localeCompare(ca);
+    return b.id - a.id;
   });
-}
-
-/** 0 = active/live now, 1 = upcoming / other. */
-function conferenceUrgencyRank(
-  status: string,
-  start: string,
-  end: string,
-): number {
-  if (status === "Active" || isConferenceLive(start, end)) return 0;
-  return 1;
 }
 
 function isConferenceLive(start: string, end: string): boolean {

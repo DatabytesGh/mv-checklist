@@ -310,23 +310,9 @@ function groupChecklists(rows: Row[]): {
       dailyRows.push(r);
     }
   }
-  const conferenceGroups = Array.from(map.values()).sort((a, b) => {
-    const rankA = conferenceUrgencyRank(a.status, a.startDate, a.endDate);
-    const rankB = conferenceUrgencyRank(b.status, b.startDate, b.endDate);
-    if (rankA !== rankB) return rankA - rankB;
-    return a.startDate.localeCompare(b.startDate);
-  });
+  // Newest conferences first (higher id = created later).
+  const conferenceGroups = Array.from(map.values()).sort((a, b) => b.id - a.id);
   return { conferenceGroups, dailyRows };
-}
-
-/** 0 = active/live now, 1 = upcoming / other. */
-function conferenceUrgencyRank(
-  status: string,
-  start: string,
-  end: string,
-): number {
-  if (status === "Active" || isConferenceLive(start, end)) return 0;
-  return 1;
 }
 
 function conferenceChecklistRank(slug: string): number {
@@ -340,17 +326,4 @@ function conferenceChecklistRank(slug: string): number {
     "conference-it": 7,
   };
   return order[slug] ?? 50;
-}
-
-function isConferenceLive(start: string, end: string): boolean {
-  const now = new Date();
-  const s = new Date(start);
-  const e = new Date(end);
-  if (isNaN(s.getTime()) || isNaN(e.getTime())) return false;
-  now.setHours(0, 0, 0, 0);
-  const startDay = new Date(s.getFullYear(), s.getMonth(), s.getDate());
-  const endDay = new Date(e.getFullYear(), e.getMonth(), e.getDate());
-  return (
-    now.getTime() >= startDay.getTime() && now.getTime() <= endDay.getTime()
-  );
 }
