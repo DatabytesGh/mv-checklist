@@ -67,7 +67,7 @@ async function copyText(text: string): Promise<boolean> {
 
 function markForStatus(status: string | null): string {
   if (status === "checked") return "✅";
-  if (status === "na") return "➖";
+  if (status === "na") return "➖ N/A";
   // faulty, not_done, pending, or anything else → red cross
   return "❌";
 }

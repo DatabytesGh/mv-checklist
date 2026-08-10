@@ -55,6 +55,12 @@
   --zinc-800: #e4e4e7;
   --zinc-900: #f4f4f5;
   --zinc-950: #fafafa;
+
+  /* Deep accent greens — pastel accent-* reads poorly on white */
+  --color-accent-100: #14532d;
+  --color-accent-200: #166534;
+  --color-accent-300: #15803d;
+  --color-accent-400: #16a34a;
 }
 
 @theme inline {
@@ -109,6 +115,39 @@ body {
 }
 .light .shadow-lg {
   box-shadow: 0 2px 8px rgb(24 24 27 / 0.06);
+}
+
+/*
+ * Light-mode contrast for pastel status colors authored for dark backgrounds
+ * (text-amber-200/300, text-emerald-300, etc. wash out on white).
+ */
+.light .text-amber-100,
+.light .text-amber-200,
+.light .text-amber-300 {
+  color: #b45309; /* amber-700 */
+}
+.light .text-amber-400 {
+  color: #d97706; /* amber-600 */
+}
+.light .text-emerald-100,
+.light .text-emerald-200,
+.light .text-emerald-300 {
+  color: #047857; /* emerald-700 */
+}
+.light .text-emerald-400 {
+  color: #059669; /* emerald-600 */
+}
+.light .text-red-200,
+.light .text-red-300 {
+  color: #b91c1c; /* red-700 */
+}
+.light .text-sky-200,
+.light .text-sky-300 {
+  color: #0369a1; /* sky-700 */
+}
+.light .text-orange-200,
+.light .text-orange-300 {
+  color: #c2410c; /* orange-700 */
 }
 
 /** Main scroll area — bottom space for tab bar + floating banners */

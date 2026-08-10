@@ -24,6 +24,8 @@ export function statusColor(status: string): string {
       return "bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 border-emerald-500/40";
     case "submitted":
       return "bg-amber-500/20 text-amber-700 dark:text-amber-300 border-amber-500/40";
+    case "na":
+      return "bg-amber-500/20 text-amber-800 dark:text-amber-300 border-amber-500/50";
     case "rejected":
       return "bg-red-500/20 text-red-700 dark:text-red-300 border-red-500/40";
     case "in_progress":

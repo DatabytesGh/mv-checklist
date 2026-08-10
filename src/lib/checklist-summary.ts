@@ -36,7 +36,7 @@ function statusMark(status: string | null): string {
     case null:
       return "❌";
     case "na":
-      return "➖";
+      return "➖ N/A";
     default:
       return "❌";
   }

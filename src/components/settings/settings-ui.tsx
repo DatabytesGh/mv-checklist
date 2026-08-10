@@ -193,10 +193,12 @@ export function Pill({
 }) {
   const tones: Record<string, string> = {
     zinc: "border-zinc-700 bg-zinc-800/60 text-zinc-300",
-    green: "border-accent-500/40 bg-accent-500/10 text-accent-300",
-    red: "border-red-500/40 bg-red-500/10 text-red-300",
-    amber: "border-amber-500/40 bg-amber-500/10 text-amber-300",
-    sky: "border-sky-500/40 bg-sky-500/10 text-sky-300",
+    green:
+      "border-accent-600/40 bg-accent-500/10 text-accent-700 dark:border-accent-500/40 dark:text-accent-300",
+    red: "border-red-500/40 bg-red-500/10 text-red-700 dark:text-red-300",
+    amber:
+      "border-amber-600/40 bg-amber-500/10 text-amber-800 dark:border-amber-500/40 dark:text-amber-300",
+    sky: "border-sky-500/40 bg-sky-500/10 text-sky-700 dark:text-sky-300",
   };
   return (
     <span

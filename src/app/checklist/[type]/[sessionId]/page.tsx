@@ -15,7 +15,7 @@ import { TimePicker } from "@/components/checklist/time-picker";
 import { formatNow } from "@/lib/time-format";
 import { cn, statusColor } from "@/lib/utils";
 import { Badge } from "@/components/ui/card";
-import { Check, X, AlertTriangle, Camera, Loader2 } from "lucide-react";
+import { Check, X, AlertTriangle, Camera, Loader2, CircleMinus } from "lucide-react";
 import { ChecklistSessionSkeleton } from "@/components/loading/page-skeletons";
 import { apiFetch } from "@/lib/fetch";
 import { checklistHref, normalizeChecklistSlug } from "@/lib/checklist-slugs";
@@ -652,6 +652,20 @@ export default function ChecklistSessionPage({
                         >
                           <X className="h-3.5 w-3.5" />
                         </button>
+                        <button
+                          type="button"
+                          aria-label="Mark not applicable"
+                          title="Not applicable"
+                          className={cn(
+                            "inline-flex h-9 w-9 items-center justify-center rounded-xl border transition-colors",
+                            na
+                              ? "border-amber-600 bg-amber-500/25 text-amber-800 dark:border-amber-500 dark:text-amber-300"
+                              : "border-zinc-800 bg-zinc-900/60 text-amber-700 hover:border-amber-600 hover:bg-amber-500/15 dark:text-amber-500 dark:hover:border-amber-500/60 dark:hover:text-amber-300",
+                          )}
+                          onClick={() => updateItem(item, "na")}
+                        >
+                          <CircleMinus className="h-3.5 w-3.5" strokeWidth={2.5} />
+                        </button>
                         {canAddPhotos && (
                           <PhotoTriggerButton
                             sessionId={sessionId}
@@ -783,7 +797,7 @@ function ResponseCredit({
         : status === "not_done"
           ? "bg-red-500"
           : status === "na"
-            ? "bg-zinc-500"
+            ? "bg-amber-600"
             : "bg-zinc-600";
 
   return (
@@ -806,7 +820,7 @@ function StatusDot({ status }: { status: string | null }) {
         : status === "not_done"
           ? "bg-red-500 ring-red-500/30"
           : status === "na"
-            ? "bg-zinc-500 ring-zinc-500/20"
+            ? "bg-amber-600 ring-amber-600/30"
             : "bg-zinc-700 ring-zinc-700/30";
   return (
     <span
