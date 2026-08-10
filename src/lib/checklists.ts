@@ -188,6 +188,27 @@ export function markSessionInProgress(
 }
 
 /**
+ * If a submitted checklist is edited again, pull it out of "awaiting approval"
+ * so the staff must re-submit after their changes.
+ */
+export function reopenSubmittedSession(
+  sessionId: number | string,
+  db: Database.Database = getDb(),
+): boolean {
+  const row = db
+    .prepare(`SELECT status FROM checklist_sessions WHERE id = ?`)
+    .get(sessionId) as { status: string } | undefined;
+  if (!row || row.status !== "submitted") return false;
+
+  db.prepare(
+    `UPDATE checklist_sessions
+     SET status = 'in_progress', submitted_at = NULL
+     WHERE id = ? AND status = 'submitted'`,
+  ).run(sessionId);
+  return true;
+}
+
+/**
  * Repair sessions that were marked in_progress just by opening (0 items addressed).
  * Safe to run on boot / list — does not touch submitted/approved/rejected.
  */

@@ -5,6 +5,7 @@ import { getDb } from "@/lib/db";
 import { canCompleteChecklist } from "@/lib/permissions";
 import {
   markSessionInProgress,
+  reopenSubmittedSession,
   resolveChecklistType,
 } from "@/lib/checklists";
 import { newResponseId, tableIdIsText } from "@/lib/sessions-db";
@@ -52,11 +53,9 @@ export async function PATCH(req: NextRequest) {
     return NextResponse.json({ error: "Session not found" }, { status: 404 });
   }
 
-  const readonly =
-    session.status === "approved" ||
-    (session.status === "submitted" && !user.permissions.approveChecklist);
-
-  if (readonly) {
+  // Approved checklists stay locked. Submitted ones can still be edited —
+  // changing an item reopens them for re-submit (see below).
+  if (session.status === "approved") {
     return NextResponse.json({ error: "Checklist is read-only" }, { status: 403 });
   }
 
@@ -126,6 +125,14 @@ export async function PATCH(req: NextRequest) {
     actorName: user.display_name ?? user.username,
     itemStatus: status,
   });
+
+  // Editing after submit pulls the checklist back to in_progress so staff
+  // must submit again (approval shouldn't review a stale snapshot).
+  if (session.status === "submitted") {
+    if (reopenSubmittedSession(sid, db)) {
+      logAudit(user.id, "checklist_reopened", "session", sid, "edited after submit");
+    }
+  }
 
   // First real work on this checklist → mark in progress + notify recipients.
   const isFirstProgress =

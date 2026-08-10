@@ -78,7 +78,6 @@ export default function ChecklistSessionPage({
   const [vendors, setVendors] = useState<Array<{ id: number; name: string }>>([]);
   const [faultOpen, setFaultOpen] = useState(false);
   const [faultItem, setFaultItem] = useState<Item | null>(null);
-  const [submitted, setSubmitted] = useState(false);
   const [reviewOpen, setReviewOpen] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [fetchState, setFetchState] = useState<"loading" | "ready" | "error">("loading");
@@ -149,7 +148,6 @@ export default function ChecklistSessionPage({
           }
         });
         setData({ ...json, items: mergedItems });
-        setSubmitted(json.session.status === "submitted");
         setFetchState("ready");
         const canonical = normalizeChecklistSlug(
           json.type?.slug ?? json.session?.checklist_type_slug ?? type,
@@ -266,8 +264,13 @@ export default function ChecklistSessionPage({
       inc(status);
       p.addressed = p.checked + p.faulty + p.na + (p.not_done ?? 0);
       p.completed = p.checked + p.faulty;
+      // Editing after submit reopens the session — show Submit again immediately.
+      const reopened = state.session.status === "submitted";
       return {
         ...state,
+        session: reopened
+          ? { ...state.session, status: "in_progress" }
+          : state.session,
         items: state.items.map((i) =>
           i.id === item.id
             ? {
@@ -319,7 +322,11 @@ export default function ChecklistSessionPage({
       body: JSON.stringify({ action: "submit" }),
     });
     if (res.ok) {
-      setSubmitted(true);
+      setData((state) =>
+        state
+          ? { ...state, session: { ...state.session, status: "submitted" } }
+          : state,
+      );
       if (pending > 0) {
         toast.success(
           `${pending} omitted item${pending === 1 ? "" : "s"} marked not done`,
@@ -368,17 +375,16 @@ export default function ChecklistSessionPage({
     );
   }
 
-  const readonly =
-    data.session.status === "approved" ||
-    (data.session.status === "submitted" && !user?.permissions.approveChecklist);
+  // Only approved checklists are locked. Submitted ones stay editable so staff
+  // can undo/redo — the first edit reopens them for re-submit.
+  const readonly = data.session.status === "approved";
 
   // Photos are optional and can be added even after an item is marked done —
   // allowed until the whole checklist is approved (locked).
   const canAddPhotos = data.session.status !== "approved";
 
-  const showActionBar =
-    (!readonly && !submitted) ||
-    (submitted && data.session.status === "submitted");
+  const isSubmitted = data.session.status === "submitted";
+  const showActionBar = !readonly;
 
   return (
     <div className="space-y-4 pb-8">
@@ -397,7 +403,7 @@ export default function ChecklistSessionPage({
         <Badge className={cn("border", statusColor(data.session.status))}>
           {data.session.status.replace("_", " ")}
         </Badge>
-        {user?.permissions.approveChecklist && data.session.status === "submitted" && (
+        {user?.permissions.approveChecklist && isSubmitted && (
           <span className="text-xs text-amber-300">Tap items to review</span>
         )}
       </PageHeader>
@@ -590,6 +596,11 @@ export default function ChecklistSessionPage({
                           onClick={() => {
                             const latest =
                               data.items.find((i) => i.id === item.id) ?? item;
+                            // Tap again to undo → pending.
+                            if (latest.response_status === "checked") {
+                              updateItem(latest, "pending");
+                              return;
+                            }
                             if (
                               latest.requires_text_entry &&
                               !latest.is_shift_leader_selector &&
@@ -648,7 +659,14 @@ export default function ChecklistSessionPage({
                               ? "border-red-500 bg-red-500/20 text-red-300"
                               : "border-zinc-800 bg-zinc-900/60 text-zinc-500 hover:border-red-500/50 hover:text-red-300",
                           )}
-                          onClick={() => updateItem(item, "not_done")}
+                          onClick={() =>
+                            updateItem(
+                              item,
+                              item.response_status === "not_done"
+                                ? "pending"
+                                : "not_done",
+                            )
+                          }
                         >
                           <X className="h-3.5 w-3.5" />
                         </button>
@@ -662,7 +680,12 @@ export default function ChecklistSessionPage({
                               ? "border-amber-600 bg-amber-500/25 text-amber-800 dark:border-amber-500 dark:text-amber-300"
                               : "border-zinc-800 bg-zinc-900/60 text-amber-700 hover:border-amber-600 hover:bg-amber-500/15 dark:text-amber-500 dark:hover:border-amber-500/60 dark:hover:text-amber-300",
                           )}
-                          onClick={() => updateItem(item, "na")}
+                          onClick={() =>
+                            updateItem(
+                              item,
+                              item.response_status === "na" ? "pending" : "na",
+                            )
+                          }
                         >
                           <CircleMinus className="h-3.5 w-3.5" strokeWidth={2.5} />
                         </button>
@@ -704,7 +727,7 @@ export default function ChecklistSessionPage({
         </div>
       ))}
 
-      {user?.permissions.approveChecklist && data.session.status === "submitted" && (
+      {user?.permissions.approveChecklist && isSubmitted && (
         <div className="space-y-2 border-t border-zinc-800 pt-4">
           <Button className="w-full" onClick={() => setReviewOpen(true)}>
             Review submission
@@ -721,7 +744,7 @@ export default function ChecklistSessionPage({
       {showActionBar && (
         <div className="checklist-action-bar">
           <div className="w-full max-w-md md:w-auto md:max-w-none">
-            {!readonly && !submitted && (
+            {!isSubmitted && (
               <Button
                 className="w-full shadow-lg md:w-auto md:min-w-[680px]"
                 onClick={submit}
@@ -729,10 +752,11 @@ export default function ChecklistSessionPage({
                 Submit checklist
               </Button>
             )}
-            {submitted && data.session.status === "submitted" && (
+            {isSubmitted && (
               <div className="flex flex-col items-center gap-2">
                 <span className="rounded-full bg-amber-500/15 px-3 py-1 text-xs text-amber-300 backdrop-blur">
-                  Submitted — awaiting approval
+                  Submitted — awaiting approval. Edit any item to undo and
+                  re-submit.
                 </span>
                 <Button
                   variant="soft"
