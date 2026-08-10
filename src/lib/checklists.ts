@@ -267,18 +267,9 @@ export function updateSessionStatus(
 export function sessionProgress(sessionId: number | string) {
   const db = getDb();
 
-  // The response counts tell us how many items have been addressed and how
-  // (checked / faulty / na / pending). But the total denominator must come
-  // from the ACTIVE template items for this checklist type — otherwise a
-  // partly-filled session would report 3/3 = 100% when only 3 of 11 items
-  // have any response recorded yet.
-  const rows = db
-    .prepare(
-      `SELECT status, COUNT(*) as c FROM checklist_item_responses
-       WHERE session_id = ? GROUP BY status`,
-    )
-    .all(sessionId) as { status: string; c: number }[];
-
+  // Progress must match the checklist UI: only ACTIVE template items for this
+  // session's type. Responses left behind on deactivated/renamed items must not
+  // inflate totals or show phantom "not done" counts.
   const templateTotal = db
     .prepare(
       `SELECT COUNT(*) AS c FROM checklist_templates t
@@ -287,17 +278,27 @@ export function sessionProgress(sessionId: number | string) {
     )
     .get(sessionId) as { c: number } | undefined;
 
-  const responsesTotal = rows.reduce((s, r) => s + r.c, 0);
-  /** Fall back to the response count if templates are missing/inactive — never
-   *  under-report so that 3 checked out of 3 responses still reads correctly. */
-  const total = Math.max(templateTotal?.c ?? 0, responsesTotal);
+  const rows = db
+    .prepare(
+      `SELECT COALESCE(NULLIF(r.status, ''), 'pending') AS status, COUNT(*) AS c
+       FROM checklist_templates t
+       JOIN checklist_sessions s ON s.checklist_type_slug = t.checklist_type_slug
+       LEFT JOIN checklist_item_responses r
+         ON r.session_id = s.id
+        AND CAST(r.template_item_id AS TEXT) = CAST(t.id AS TEXT)
+       WHERE s.id = ? AND t.is_active = 1
+       GROUP BY COALESCE(NULLIF(r.status, ''), 'pending')`,
+    )
+    .all(sessionId) as { status: string; c: number }[];
+
+  const total = templateTotal?.c ?? 0;
   const checked = rows.find((r) => r.status === "checked")?.c ?? 0;
   const faulty = rows.find((r) => r.status === "faulty")?.c ?? 0;
   const na = rows.find((r) => r.status === "na")?.c ?? 0;
   const notDone = rows.find((r) => r.status === "not_done")?.c ?? 0;
   /** Counts toward submit (no pending left). */
   const addressed = checked + faulty + na + notDone;
-  /** Any template item without a response yet is still pending user input. */
+  /** Active items with no response (or still pending) still need input. */
   const pending = Math.max(0, total - addressed);
   /** Counts toward completion % — omitted / N/A lower the bar, not raise it. */
   const completed = checked + faulty;
