@@ -433,23 +433,43 @@ export async function notifyConferenceCreatedToRecipients(
       ? String(input.guestCount)
       : "TBC";
   const text = buildConferenceCreatedText(input);
+  const conferenceParams = [
+    input.conferenceName,
+    dates,
+    guests,
+    input.creatorName,
+  ];
 
-  return sendReliableToMany(phones, {
-    preferredTemplates: [
-      WA_TEMPLATES.conferenceCreated,
-      "mmv_conference_created",
-    ],
-    preferredParams: [input.conferenceName, dates, guests, input.creatorName],
-    textBody: text,
-    bridgePoParams: [input.conferenceName, input.creatorName],
-    bridgeFaultParams: [
-      input.creatorName,
-      dates,
-      input.conferenceName,
-      "scheduled",
-      "Begin your conference checklists",
-    ],
-  });
+  // Dedicated template may still be PENDING on Meta. Try it first, then the
+  // already-approved checklist_started template, then free-form / bridge.
+  return Promise.all(
+    phones.map(async (to) => {
+      const dedicated = await sendWhatsAppTemplateFirst(
+        to,
+        [WA_TEMPLATES.conferenceCreated, "mmv_conference_created"],
+        conferenceParams,
+        undefined,
+        text,
+      );
+      if (dedicated.ok) return dedicated;
+      return sendWhatsAppReliable(to, {
+        preferredTemplates: [
+          WA_TEMPLATES.checklistStarted,
+          "mmv_checklist_started",
+        ],
+        preferredParams: [input.conferenceName, dates, input.creatorName],
+        textBody: text,
+        bridgePoParams: [input.conferenceName, input.creatorName],
+        bridgeFaultParams: [
+          input.creatorName,
+          dates,
+          input.conferenceName,
+          "scheduled",
+          "Begin your conference checklists",
+        ],
+      });
+    }),
+  );
 }
 
 export function voidNotifyConferenceCreated(

@@ -39,6 +39,7 @@ interface ChecklistRow {
   status: string;
   frequency: string;
   sessionId: string | number | null;
+  conferenceId?: number | null;
   canComplete: boolean;
   progress: {
     total: number;
@@ -97,7 +98,11 @@ export default function DashboardPage() {
       if (res.ok) {
         const data = await res.json();
         const all = (data.checklists ?? []) as ChecklistRow[];
-        setChecklists(all.filter((c) => c.frequency === "daily"));
+        // Daily tiles only — conference-linked facility/kitchen/etc. sessions
+        // share those slugs and belong in Conferences, not this grid.
+        setChecklists(
+          all.filter((c) => c.frequency === "daily" && c.conferenceId == null),
+        );
         if (data.today) setToday(data.today);
         setLoadError(null);
       } else {
@@ -337,7 +342,7 @@ export default function DashboardPage() {
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
             {checklists.map((c, i) => (
               <DailyChecklistTile
-                key={c.slug}
+                key={`${c.slug}-${c.sessionId ?? "none"}`}
                 {...c}
                 index={i + 1}
                 onStart={() => start(c.slug)}
