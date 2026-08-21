@@ -66,6 +66,7 @@ export async function GET(request: Request) {
     const names = [
       WA_TEMPLATES.checklistStarted,
       WA_TEMPLATES.checklistSubmitted,
+      WA_TEMPLATES.conferenceCreated,
       WA_TEMPLATES.faultReport,
       "mmv_po_pending_approval",
       "hello_world",

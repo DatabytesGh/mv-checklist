@@ -16,7 +16,10 @@ import Link from "next/link";
 import { DashboardSkeleton } from "@/components/loading/page-skeletons";
 import { PageHeader } from "@/components/layout/page-header";
 import { LiveActivityBanner } from "@/components/dashboard/live-activity-banner";
+import { DailyChecklistTile } from "@/components/dashboard/daily-checklist-tile";
 import { useRealtimeRefresh } from "@/providers/realtime-provider";
+import { useToast } from "@/providers/toast-provider";
+import { checklistHref } from "@/lib/checklist-slugs";
 import { statusColor, cn } from "@/lib/utils";
 import {
   CAROUSEL_SLIDE_CLASS,
@@ -71,6 +74,7 @@ function localToday(): string {
 export default function DashboardPage() {
   const { user } = useAuth();
   const router = useRouter();
+  const toast = useToast();
   const [checklists, setChecklists] = useState<ChecklistRow[]>([]);
   const [upcomingConferences, setUpcomingConferences] = useState<
     UpcomingConference[]
@@ -108,7 +112,9 @@ export default function DashboardPage() {
           setUpcomingConferences(
             sortUpcomingConferences(
               (cd.conferences ?? []).filter(
-                (c) => c.status === "Planning" || c.status === "Active",
+                (c) =>
+                  (c.status === "Planning" || c.status === "Active") &&
+                  c.end_date >= localToday(),
               ),
             ),
           );
@@ -165,6 +171,32 @@ export default function DashboardPage() {
       c.status !== "approved" &&
       c.status !== "submitted",
   ).length;
+  const checklistsHref = isToday ? "/checklists" : `/checklists?date=${selected}`;
+
+  const start = async (slug: string) => {
+    try {
+      const res = await apiFetch("/api/checklists", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ slug, date: selected }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        toast.error(err.error ?? "Could not open checklist");
+        return;
+      }
+      const data = await res.json();
+      if (!data.session?.id) {
+        toast.error("Could not start checklist");
+        return;
+      }
+      router.push(
+        checklistHref(data.session.checklist_type_slug ?? slug, data.session.id),
+      );
+    } catch {
+      toast.error("Connection lost — try again");
+    }
+  };
 
   if (!ready) {
     return <DashboardSkeleton />;
@@ -220,14 +252,22 @@ export default function DashboardPage() {
                       : ""}
                   </p>
                 </div>
-                {user?.permissions.initiateConference && (
+                <div className="flex shrink-0 items-center gap-3">
                   <Link
-                    href="/conferences"
-                    className="shrink-0 text-xs text-accent-400 hover:underline"
+                    href="/conferences?view=past"
+                    className="text-xs text-zinc-500 hover:text-zinc-300 hover:underline"
                   >
-                    Manage →
+                    Past
                   </Link>
-                )}
+                  {user?.permissions.initiateConference && (
+                    <Link
+                      href="/conferences"
+                      className="text-xs text-accent-400 hover:underline"
+                    >
+                      Manage →
+                    </Link>
+                  )}
+                </div>
               </div>
               <HorizontalCarousel
                 itemCount={upcomingConferences.length}
@@ -242,26 +282,36 @@ export default function DashboardPage() {
               </HorizontalCarousel>
             </section>
           ) : (
-            user?.permissions.initiateConference && (
-              <Card>
-                <CardContent className="flex items-center justify-between py-4">
-                  <div>
-                    <p className="text-sm font-medium text-zinc-200">
-                      No upcoming conferences
-                    </p>
-                    <p className="text-xs text-zinc-500">
-                      Plan an event to auto-activate its checklists.
-                    </p>
-                  </div>
+            <Card>
+              <CardContent className="flex items-center justify-between py-4">
+                <div>
+                  <p className="text-sm font-medium text-zinc-200">
+                    No upcoming conferences
+                  </p>
+                  <p className="text-xs text-zinc-500">
+                    {user?.permissions.initiateConference
+                      ? "Plan an event to auto-activate its checklists."
+                      : "Finished events stay in Past conferences."}
+                  </p>
+                </div>
+                <div className="flex shrink-0 flex-col items-end gap-1">
+                  {user?.permissions.initiateConference && (
+                    <Link
+                      href="/conferences"
+                      className="text-sm text-accent-400 hover:underline"
+                    >
+                      Plan one →
+                    </Link>
+                  )}
                   <Link
-                    href="/conferences"
-                    className="text-sm text-accent-400 hover:underline"
+                    href="/conferences?view=past"
+                    className="text-xs text-zinc-500 hover:underline"
                   >
-                    Plan one →
+                    View past
                   </Link>
-                </CardContent>
-              </Card>
-            )
+                </div>
+              </CardContent>
+            </Card>
           )}
         </>
       )}
@@ -271,7 +321,31 @@ export default function DashboardPage() {
         openFaults={openFaults}
         isToday={isToday}
         mineNeedingWork={mineNeedingWork}
+        checklistsHref={checklistsHref}
       />
+
+      {checklists.length > 0 && (
+        <section id="day-checklists" className="space-y-3">
+          <div className="flex items-center justify-between px-1">
+            <h2 className="text-base font-bold text-zinc-200">
+              {isToday ? "Today’s checklists" : "Checklists for this day"}
+            </h2>
+            <span className="text-xs text-zinc-500">
+              {checklists.length} total
+            </span>
+          </div>
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            {checklists.map((c, i) => (
+              <DailyChecklistTile
+                key={c.slug}
+                {...c}
+                index={i + 1}
+                onStart={() => start(c.slug)}
+              />
+            ))}
+          </div>
+        </section>
+      )}
     </div>
   );
 }
@@ -350,11 +424,13 @@ function DailyOpsPulse({
   openFaults,
   isToday,
   mineNeedingWork,
+  checklistsHref,
 }: {
   pulse: ReturnType<typeof summarizeDaily>;
   openFaults: number;
   isToday: boolean;
   mineNeedingWork: number;
+  checklistsHref: string;
 }) {
   const title = isToday ? "Daily operations" : "Day overview";
 
@@ -363,7 +439,7 @@ function DailyOpsPulse({
       <div className="flex items-center justify-between px-1">
         <h2 className="text-base font-bold text-zinc-200">{title}</h2>
         <Link
-          href="/checklists"
+          href={checklistsHref}
           className="text-xs text-accent-400 hover:underline"
         >
           Open checklists →
@@ -461,13 +537,13 @@ function DailyOpsPulse({
                 {pulse.rejected} rejected
               </span>
             )}
-            {isToday && mineNeedingWork > 0 && (
-              <Link
-                href="/checklists"
+            {mineNeedingWork > 0 && (
+              <a
+                href="#day-checklists"
                 className="inline-flex items-center gap-1.5 rounded-full border border-accent-500/30 bg-accent-500/10 px-2.5 py-1 text-accent-300 hover:bg-accent-500/15"
               >
                 {mineNeedingWork} of yours need work
-              </Link>
+              </a>
             )}
           </div>
         </CardContent>

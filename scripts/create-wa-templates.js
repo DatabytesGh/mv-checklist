@@ -88,6 +88,23 @@ const TEMPLATES = [
       },
     ],
   },
+  {
+    name: "mmv_conference_created",
+    language: "en_US",
+    category: "UTILITY",
+    components: [
+      {
+        type: "BODY",
+        text:
+          "📅 *MV CHECKLIST*\nA new conference has been scheduled: {{1}}\nDates: {{2}} · Guests: {{3}}\nCreated by {{4}}. Please open the app and begin your conference checklists so we are ready for the event.",
+        example: {
+          body_text: [
+            ["Rotary Annual Retreat", "21 Aug 2026 – 23 Aug 2026", "80", "Ama"],
+          ],
+        },
+      },
+    ],
+  },
 ];
 
 async function graph(method, urlPath, body) {
@@ -122,7 +139,11 @@ async function main() {
   }
 
   const data = existing.json.data || [];
-  const mmv = data.filter((t) => String(t.name).startsWith("mmv_checklist_"));
+  const mmv = data.filter(
+    (t) =>
+      String(t.name).startsWith("mmv_checklist_") ||
+      String(t.name) === "mmv_conference_created",
+  );
   console.log(
     "Existing mmv_checklist_*:",
     mmv.map((t) => `${t.name} [${t.language}] ${t.status}`),
@@ -150,8 +171,10 @@ async function main() {
     "GET",
     `${wabaId}/message_templates?limit=100&fields=name,status,language,category`,
   );
-  const checklist = (after.json.data || []).filter((t) =>
-    String(t.name).startsWith("mmv_checklist_"),
+  const checklist = (after.json.data || []).filter(
+    (t) =>
+      String(t.name).startsWith("mmv_checklist_") ||
+      String(t.name) === "mmv_conference_created",
   );
   console.log("\nChecklist templates now:");
   for (const t of checklist) {

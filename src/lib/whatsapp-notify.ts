@@ -341,6 +341,136 @@ export function voidNotifyChecklistSubmittedToRecipients(
   });
 }
 
+/**
+ * Phones for every active team member with a WhatsApp number, plus the
+ * hotel/fallback number. Used for conference-created alerts so kitchen, IT,
+ * housekeeping, etc. all hear about new work — not only notification roles.
+ */
+export function resolveTeamMemberPhones(db: Database.Database): string[] {
+  const phones = new Set<string>();
+
+  for (const u of listActiveUsers(db)) {
+    if (!u.phone?.trim()) continue;
+    const normalised = normalizePhone(u.phone);
+    if (normalised) phones.add(normalised);
+  }
+
+  const fallback = resolveApproverWhatsApp(db);
+  const fallbackNorm = normalizePhone(fallback);
+  if (fallbackNorm) phones.add(fallbackNorm);
+
+  return [...phones];
+}
+
+export type ConferenceCreatedNotifyInput = {
+  conferenceName: string;
+  startDate: string;
+  endDate: string;
+  guestCount?: number | null;
+  creatorName: string;
+  checklistLabels?: string[];
+};
+
+export function formatConferenceDateRange(
+  start: string,
+  end: string,
+): string {
+  const fmt = (iso: string) => {
+    const d = new Date(`${iso}T00:00:00`);
+    if (isNaN(d.getTime())) return iso;
+    return d.toLocaleDateString("en-GB", {
+      day: "numeric",
+      month: "short",
+      year: "numeric",
+    });
+  };
+  if (start === end) return fmt(start);
+  return `${fmt(start)} – ${fmt(end)}`;
+}
+
+export function buildConferenceCreatedText(
+  input: ConferenceCreatedNotifyInput,
+): string {
+  const dates = formatConferenceDateRange(input.startDate, input.endDate);
+  const guests =
+    input.guestCount != null && input.guestCount > 0
+      ? String(input.guestCount)
+      : "TBC";
+  const lines = [
+    `📅 *MV CHECKLIST*`,
+    `A new conference has been scheduled: ${input.conferenceName}`,
+    `Dates: ${dates} · Guests: ${guests}`,
+    `Created by ${input.creatorName}. Please open the app and begin your conference checklists so we are ready for the event.`,
+  ];
+  if (input.checklistLabels && input.checklistLabels.length > 0) {
+    lines.push("", "Checklists:", ...input.checklistLabels.map((l) => `• ${l}`));
+  }
+  return lines.join("\n");
+}
+
+/** Notify every team member with a phone that a conference was just created. */
+export async function notifyConferenceCreatedToRecipients(
+  db: Database.Database,
+  input: ConferenceCreatedNotifyInput,
+): Promise<SendAttemptResult[]> {
+  if (!getWhatsAppConfigStatus().configured) {
+    return [
+      {
+        ok: false,
+        errorMessage: "META_WA_TOKEN or META_WA_PHONE_ID missing",
+      },
+    ];
+  }
+
+  const phones = resolveTeamMemberPhones(db);
+  if (phones.length === 0) {
+    return [{ ok: false, errorMessage: "No notification recipients" }];
+  }
+
+  const dates = formatConferenceDateRange(input.startDate, input.endDate);
+  const guests =
+    input.guestCount != null && input.guestCount > 0
+      ? String(input.guestCount)
+      : "TBC";
+  const text = buildConferenceCreatedText(input);
+
+  return sendReliableToMany(phones, {
+    preferredTemplates: [
+      WA_TEMPLATES.conferenceCreated,
+      "mmv_conference_created",
+    ],
+    preferredParams: [input.conferenceName, dates, guests, input.creatorName],
+    textBody: text,
+    bridgePoParams: [input.conferenceName, input.creatorName],
+    bridgeFaultParams: [
+      input.creatorName,
+      dates,
+      input.conferenceName,
+      "scheduled",
+      "Begin your conference checklists",
+    ],
+  });
+}
+
+export function voidNotifyConferenceCreated(
+  db: Database.Database,
+  input: ConferenceCreatedNotifyInput,
+): void {
+  void notifyConferenceCreatedToRecipients(db, input).then((results) => {
+    for (const result of results) {
+      if (!result.ok) {
+        console.warn(
+          "[whatsapp] conference created notify failed:",
+          result.errorCode ?? "",
+          result.errorMessage ?? "unknown",
+        );
+      } else {
+        console.info("[whatsapp] conference created notify ok:", result.messageId);
+      }
+    }
+  });
+}
+
 export type FaultVendorNotifyInput = {
   to: string;
   staffName: string;

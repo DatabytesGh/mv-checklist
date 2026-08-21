@@ -11,7 +11,7 @@ import { Badge } from "@/components/ui/card";
 import { PageHeader } from "@/components/layout/page-header";
 import { ConfirmDialog } from "@/components/settings/settings-ui";
 import { ListRowsSkeleton, PageHeaderSkeleton } from "@/components/loading/page-skeletons";
-import { Calendar, CheckCircle2, Trash2 } from "lucide-react";
+import { Archive, Calendar, CheckCircle2, Trash2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface Conference {
@@ -22,7 +22,12 @@ interface Conference {
   end_date: string;
   status: string;
   guest_count: number | null;
-  checklistProgress?: { total: number; approved: number };
+  checklistProgress?: {
+    total: number;
+    approved: number;
+    submitted?: number;
+    inProgress?: number;
+  };
 }
 
 const EMPTY_FORM = {
@@ -44,6 +49,7 @@ export default function ConferencesPage() {
   const [form, setForm] = useState(EMPTY_FORM);
   const [deleteTarget, setDeleteTarget] = useState<Conference | null>(null);
   const [deleting, setDeleting] = useState(false);
+  const [tab, setTab] = useState<"upcoming" | "past">("upcoming");
   const isAdmin = user?.role === "admin";
 
   const load = () =>
@@ -55,6 +61,8 @@ export default function ConferencesPage() {
   const [ready, setReady] = useState(false);
 
   useEffect(() => {
+    const view = new URLSearchParams(window.location.search).get("view");
+    if (view === "past") setTab("past");
     load().finally(() => setReady(true));
   }, []);
 
@@ -105,8 +113,8 @@ export default function ConferencesPage() {
       const count = data.sessions?.length ?? 0;
       toast.success(
         count > 0
-          ? `Conference created — ${count} checklist${count === 1 ? "" : "s"} activated`
-          : "Conference created",
+          ? `Conference created — ${count} checklist${count === 1 ? "" : "s"} activated. Team notified.`
+          : "Conference created. Team notified.",
       );
       setForm(EMPTY_FORM);
       setShowForm(false);
@@ -130,6 +138,7 @@ export default function ConferencesPage() {
   const today = localToday();
   const upcoming = conferences.filter((c) => c.end_date >= today);
   const past = conferences.filter((c) => c.end_date < today);
+  const visible = tab === "past" ? past : upcoming;
 
   return (
     <div className="space-y-6">
@@ -227,50 +236,71 @@ export default function ConferencesPage() {
         </Card>
       )}
 
-      <div className="space-y-6">
-        {upcoming.length > 0 && (
-          <section className="space-y-3">
-            {past.length > 0 && (
-              <h2 className="px-1 text-xs font-semibold uppercase tracking-wide text-zinc-500">
-                Upcoming & active
-              </h2>
-            )}
-            <div className="flex flex-col gap-4">
-              {upcoming.map((c) => (
-                <ConferenceRow key={c.id} conference={c} />
-              ))}
-            </div>
-          </section>
-        )}
+      <div className="flex gap-1 rounded-2xl border border-zinc-800 bg-zinc-950/60 p-1">
+        <button
+          type="button"
+          onClick={() => setTab("upcoming")}
+          className={cn(
+            "flex-1 rounded-xl px-3 py-2 text-sm font-medium transition-colors",
+            tab === "upcoming"
+              ? "bg-zinc-800 text-zinc-100"
+              : "text-zinc-500 hover:text-zinc-300",
+          )}
+        >
+          Upcoming
+          {upcoming.length > 0 && (
+            <span className="ml-1.5 text-xs text-zinc-500">{upcoming.length}</span>
+          )}
+        </button>
+        <button
+          type="button"
+          onClick={() => setTab("past")}
+          className={cn(
+            "flex-1 rounded-xl px-3 py-2 text-sm font-medium transition-colors",
+            tab === "past"
+              ? "bg-zinc-800 text-zinc-100"
+              : "text-zinc-500 hover:text-zinc-300",
+          )}
+        >
+          Past
+          {past.length > 0 && (
+            <span className="ml-1.5 text-xs text-zinc-500">{past.length}</span>
+          )}
+        </button>
+      </div>
 
-        {past.length > 0 && (
-          <section className="space-y-3">
-            <h2 className="px-1 text-xs font-semibold uppercase tracking-wide text-zinc-500">
-              Past conferences
-            </h2>
-            <div className="flex flex-col gap-4">
-              {past.map((c) => (
-                <ConferenceRow
-                  key={c.id}
-                  conference={c}
-                  past
-                  canDelete={isAdmin}
-                  onDelete={() => setDeleteTarget(c)}
-                />
-              ))}
-            </div>
-          </section>
-        )}
+      <div className="flex flex-col gap-4">
+        {visible.map((c) => (
+          <ConferenceRow
+            key={c.id}
+            conference={c}
+            past={tab === "past"}
+            canDelete={isAdmin && tab === "past"}
+            onDelete={tab === "past" ? () => setDeleteTarget(c) : undefined}
+          />
+        ))}
 
-        {conferences.length === 0 && !showForm && (
+        {visible.length === 0 && !showForm && (
           <div className="rounded-2xl border border-dashed border-zinc-800 py-12 text-center">
-            <Calendar className="mx-auto h-8 w-8 text-zinc-700" />
-            <p className="mt-3 text-sm text-zinc-500">
-              No conferences yet.
-              {user?.permissions.initiateConference
-                ? " Click New conference to plan one."
-                : ""}
-            </p>
+            {tab === "past" ? (
+              <>
+                <Archive className="mx-auto h-8 w-8 text-zinc-700" />
+                <p className="mt-3 text-sm text-zinc-500">
+                  No past conferences yet. Finished events will appear here
+                  with their checklist history.
+                </p>
+              </>
+            ) : (
+              <>
+                <Calendar className="mx-auto h-8 w-8 text-zinc-700" />
+                <p className="mt-3 text-sm text-zinc-500">
+                  No upcoming conferences.
+                  {user?.permissions.initiateConference
+                    ? " Click New conference to plan one."
+                    : ""}
+                </p>
+              </>
+            )}
           </div>
         )}
       </div>
@@ -308,47 +338,24 @@ function ConferenceRow({
   const allDone = progress.total > 0 && progress.approved === progress.total;
 
   return (
-    <Card
-      className={cn(
-        "transition-colors",
-        past
-          ? "border-zinc-800/60 bg-zinc-950/40 opacity-70 hover:opacity-100 hover:border-zinc-700"
-          : "hover:border-zinc-700",
-      )}
-    >
+    <Card className="transition-colors hover:border-zinc-700">
       <CardContent className="flex items-center justify-between gap-3 py-5">
         <Link href={`/conferences/${c.id}`} className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
-            <h3
-              className={cn(
-                "font-medium",
-                past ? "text-zinc-400" : "text-zinc-100",
-              )}
-            >
-              {c.name}
-            </h3>
+            <h3 className="font-medium text-zinc-100">{c.name}</h3>
             {allDone && (
-              <span
-                className={cn(
-                  "inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-medium",
-                  past
-                    ? "border-emerald-500/20 bg-emerald-500/5 text-emerald-500/80"
-                    : "border-emerald-500/40 bg-emerald-500/10 text-emerald-300",
-                )}
-              >
+              <span className="inline-flex items-center gap-1 rounded-full border border-emerald-500/40 bg-emerald-500/10 px-2 py-0.5 text-[10px] font-medium text-emerald-300">
                 <CheckCircle2 className="h-3 w-3" />
                 Checklists Completed
               </span>
             )}
           </div>
-          <p
-            className={cn(
-              "mt-1 text-sm",
-              past ? "text-zinc-600" : "text-zinc-500",
-            )}
-          >
+          <p className="mt-1 text-sm text-zinc-500">
             {formatDateRange(c.start_date, c.end_date)}
             {c.guest_count ? ` · ${c.guest_count} guests` : ""}
+            {past && progress.total > 0
+              ? ` · ${progress.approved}/${progress.total} checklists approved`
+              : ""}
           </p>
         </Link>
         <div className="flex shrink-0 items-center gap-2">

@@ -26,6 +26,7 @@ export const WA_TEMPLATES = {
   faultReportPhoto: waTemplate("fault_report_photo"),
   checklistSubmitted: waTemplate("checklist_submitted"),
   checklistStarted: waTemplate("checklist_started"),
+  conferenceCreated: waTemplate("conference_created"),
 } as const;
 
 /** Template body parameters may not contain newlines, tabs, or 4+ consecutive spaces. */

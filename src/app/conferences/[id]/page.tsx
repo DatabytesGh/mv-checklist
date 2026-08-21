@@ -26,12 +26,21 @@ import {
   MessageCircle,
   Pencil,
   Trash2,
+  Activity,
 } from "lucide-react";
 
 interface Assignee {
   id: string;
   display_name: string;
   username: string;
+}
+
+interface ActivityItem {
+  action: string;
+  details: string | null;
+  created_at: string;
+  actor_name: string;
+  checklist_label: string | null;
 }
 
 interface ConferenceData {
@@ -51,9 +60,16 @@ interface ConferenceData {
     label: string;
     status: string;
     progress: { total: number; completed: number; na?: number };
+    submitted_at?: string | null;
+    approved_at?: string | null;
+    started_by_name?: string | null;
+    approved_by_name?: string | null;
     assignees?: Assignee[];
+    contributors?: Assignee[];
   }>;
   hotelWhatsapp: string | null;
+  activity?: ActivityItem[];
+  past?: boolean;
 }
 
 export default function ConferenceDetailPage({
@@ -189,18 +205,21 @@ export default function ConferenceDetailPage({
   const overallDone = sessions.filter((s) => s.status === "approved").length;
   const staffPhoneDigits = hotelWhatsapp?.replace(/\D/g, "") ?? "";
   const staffBriefing = buildStaffBriefing(conference, sessions);
+  const isPast = Boolean(data.past) || conference.status === "Completed";
+  const activity = data.activity ?? [];
+  const displayStatus = isPast ? "Completed" : conference.status;
 
   return (
     <div className="space-y-6">
       <PageHeader
         title={conference.name}
         description={formatDateRange(conference.start_date, conference.end_date)}
-        backHref="/conferences"
+        backHref={isPast ? "/conferences?view=past" : "/conferences"}
         backLabel="Conferences"
       >
         <div className="flex flex-wrap items-center gap-2">
-          <Badge className={cn("border", statusColor(conference.status.toLowerCase()))}>
-            {conference.status}
+          <Badge className={cn("border", statusColor(displayStatus.toLowerCase()))}>
+            {displayStatus}
           </Badge>
           {isAdmin && (
             <>
@@ -248,7 +267,7 @@ export default function ConferenceDetailPage({
             label="Coordinator"
             value={conference.coordinator_name ?? "—"}
           />
-          {(conference.coordinator_phone || staffPhoneDigits) && (
+          {(conference.coordinator_phone || staffPhoneDigits) && !isPast && (
             <div className="col-span-2 flex flex-wrap gap-2 sm:col-span-4">
               {conference.coordinator_phone && (
                 <a
@@ -303,12 +322,33 @@ export default function ConferenceDetailPage({
                     total={s.progress.total}
                     na={s.progress.na}
                   />
-                  {s.assignees && s.assignees.length > 0 && (
+                  {s.contributors && s.contributors.length > 0 && (
+                    <p className="text-[11px] text-zinc-500">
+                      Worked on by:{" "}
+                      <span className="text-zinc-400">
+                        {s.contributors.map((a) => a.display_name).join(", ")}
+                      </span>
+                    </p>
+                  )}
+                  {s.assignees && s.assignees.length > 0 && !s.contributors?.length && (
                     <p className="text-[11px] text-zinc-500">
                       Assigned to:{" "}
                       <span className="text-zinc-400">
                         {s.assignees.map((a) => a.display_name).join(", ")}
                       </span>
+                    </p>
+                  )}
+                  {(s.approved_by_name || s.submitted_at) && (
+                    <p className="text-[11px] text-zinc-600">
+                      {s.submitted_at
+                        ? `Submitted ${formatWhen(s.submitted_at)}`
+                        : null}
+                      {s.submitted_at && s.approved_by_name ? " · " : null}
+                      {s.approved_by_name
+                        ? `Approved by ${s.approved_by_name}${
+                            s.approved_at ? ` ${formatWhen(s.approved_at)}` : ""
+                          }`
+                        : null}
                     </p>
                   )}
                 </CardContent>
@@ -324,11 +364,54 @@ export default function ConferenceDetailPage({
       </div>
 
       {user?.permissions.initiateConference &&
-        conference.status === "Planning" && (
+        conference.status === "Planning" &&
+        !isPast && (
           <Button onClick={activate} className="w-full sm:w-auto">
             Mark conference Active
           </Button>
         )}
+
+      {activity.length > 0 && (
+        <div>
+          <h2 className="mb-2 text-sm font-medium text-zinc-400">Activity</h2>
+          <Card>
+            <CardContent className="divide-y divide-zinc-800/80 p-0">
+              {activity.map((item, i) => (
+                <div key={`${item.created_at}-${i}`} className="flex items-start gap-3 px-4 py-3">
+                  <Activity className="mt-0.5 h-4 w-4 shrink-0 text-zinc-500" />
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm text-zinc-200">
+                      <span className="font-medium text-zinc-100">
+                        {item.actor_name}
+                      </span>{" "}
+                      <span className="text-zinc-400">
+                        {activityLabel(item.action)}
+                      </span>
+                      {item.checklist_label ? (
+                        <span className="text-zinc-500">
+                          {" "}
+                          · {item.checklist_label}
+                        </span>
+                      ) : null}
+                    </p>
+                    {item.details && (
+                      <p className="mt-0.5 line-clamp-2 text-xs text-zinc-500">
+                        {item.details}
+                      </p>
+                    )}
+                  </div>
+                  <span
+                    className="shrink-0 text-[11px] text-zinc-500"
+                    title={new Date(item.created_at).toLocaleString()}
+                  >
+                    {timeAgo(item.created_at)}
+                  </span>
+                </div>
+              ))}
+            </CardContent>
+          </Card>
+        </div>
+      )}
 
       <Modal
         open={editOpen}
@@ -550,4 +633,47 @@ function buildStaffBriefing(
     "Open the app to start.",
   ].filter((l): l is string => l !== null);
   return lines.join("\n");
+}
+
+function activityLabel(action: string): string {
+  const labels: Record<string, string> = {
+    conference_created: "created this conference",
+    conference_updated: "updated this conference",
+    conference_status_changed: "changed the status",
+    checklist_opened: "opened a checklist",
+    checklist_started: "started a checklist",
+    checklist_submitted: "submitted a checklist",
+    checklist_approved: "approved a checklist",
+    checklist_rejected: "sent a checklist back",
+    checklist_item_photo_added: "added a photo",
+    checklist_reopened: "reopened a checklist",
+    fault_reported: "reported a fault",
+    fault_resolved: "resolved a fault",
+  };
+  return labels[action] ?? action.replace(/_/g, " ");
+}
+
+function timeAgo(iso: string): string {
+  const parsed = iso.includes("T") ? iso : iso.replace(" ", "T") + "Z";
+  const diff = Date.now() - new Date(parsed).getTime();
+  const mins = Math.floor(diff / 60000);
+  if (!Number.isFinite(mins) || mins < 1) return "just now";
+  if (mins < 60) return `${mins}m ago`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `${hrs}h ago`;
+  const days = Math.floor(hrs / 24);
+  if (days < 7) return `${days}d ago`;
+  return new Date(parsed).toLocaleDateString();
+}
+
+function formatWhen(iso: string): string {
+  const parsed = iso.includes("T") ? iso : iso.replace(" ", "T") + "Z";
+  const d = new Date(parsed);
+  if (isNaN(d.getTime())) return iso;
+  return d.toLocaleString(undefined, {
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  });
 }

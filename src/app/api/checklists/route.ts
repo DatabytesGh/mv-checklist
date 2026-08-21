@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { normalizeChecklistSlug, slugVariants } from "@/lib/checklist-slugs";
 import { getSessionUser, logAudit } from "@/lib/auth";
 import { getDb, todayDate } from "@/lib/db";
+import { archivePastConferences } from "@/lib/conferences";
 import { canCompleteChecklist } from "@/lib/permissions";
 import {
   getOrCreateSession,
@@ -12,20 +13,22 @@ import { usesInventoryUserSchema } from "@/lib/users-db";
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
+function parseChecklistDate(raw: unknown, today: string): string {
+  if (typeof raw !== "string" || !DATE_RE.test(raw)) return today;
+  return raw > today ? today : raw;
+}
+
 export async function GET(req: Request) {
   const user = await getSessionUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const db = getDb();
+  archivePastConferences(db);
   repairPrematureInProgressSessions(db);
   const today = todayDate();
 
   const requested = new URL(req.url).searchParams.get("date");
-  let date = today;
-  if (requested && DATE_RE.test(requested)) {
-    // Never allow future days — only today or earlier.
-    date = requested > today ? today : requested;
-  }
+  const date = parseChecklistDate(requested, today);
   const isToday = date === today;
 
   const nameCol = usesInventoryUserSchema(db) ? "full_name" : "display_name";
@@ -121,10 +124,9 @@ export async function GET(req: Request) {
     };
   });
 
-  // Conference-linked sessions: append one card per active session so the
-  // pre-conference / conference-it work shows up alongside daily checklists.
-  // Only show non-approved sessions to avoid cluttering the list once a
-  // conference is complete.
+  // Conference-linked sessions belong on today's live list, not on a past
+  // day's daily history.
+  if (isToday) {
   const conferenceSessions = db
     .prepare(
       `SELECT cs.id, cs.status, cs.submitted_at, cs.approved_at,
@@ -147,6 +149,7 @@ export async function GET(req: Request) {
          AND cs.status != 'approved'
          AND t.is_active = 1
          AND c.status IN ('Planning', 'Active')
+         AND c.end_date >= date('now', 'localtime')
        ORDER BY c.start_date,
          CASE t.slug
            WHEN 'operational' THEN 1
@@ -212,6 +215,7 @@ export async function GET(req: Request) {
       conferenceEndDate: cs.conference_end_date,
     });
   }
+  }
 
   return NextResponse.json({ date, today, isToday, checklists: result });
 }
@@ -220,27 +224,29 @@ export async function POST(req: Request) {
   const user = await getSessionUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const { slug, conferenceId } = (await req.json()) as {
+  const body = (await req.json()) as {
     slug?: string;
     conferenceId?: number;
+    date?: string;
   };
-  if (!slug) return NextResponse.json({ error: "slug required" }, { status: 400 });
+  if (!body.slug) return NextResponse.json({ error: "slug required" }, { status: 400 });
 
-  const normalizedSlug = normalizeChecklistSlug(slug);
+  const normalizedSlug = normalizeChecklistSlug(body.slug);
   const db = getDb();
 
   if (!canCompleteChecklist(db, normalizedSlug, user)) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
-  const date = todayDate();
+  const date = parseChecklistDate(body.date, todayDate());
+  const conferenceId = body.conferenceId ?? null;
   const existing = db
     .prepare(
       `SELECT id, status FROM checklist_sessions
        WHERE checklist_type_slug = ? AND date = ?
        AND COALESCE(conference_id, -1) = COALESCE(?, -1) AND id IS NOT NULL`,
     )
-    .get(normalizedSlug, date, conferenceId ?? null) as
+    .get(normalizedSlug, date, conferenceId) as
     | { id: string; status: string }
     | undefined;
 
@@ -248,7 +254,7 @@ export async function POST(req: Request) {
     normalizedSlug,
     user.id,
     date,
-    conferenceId ?? null,
+    conferenceId,
   );
 
   // Opening creates/loads a not_started session — do not treat that as "started".

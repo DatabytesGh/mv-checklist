@@ -10,6 +10,7 @@ import { checklistHref } from "@/lib/checklist-slugs";
 import { ChecklistStatusCard } from "@/components/dashboard/checklist-status-card";
 import { ConferenceTile } from "@/components/dashboard/conference-tile";
 import { DailyChecklistTile } from "@/components/dashboard/daily-checklist-tile";
+import { DaySlider } from "@/components/dashboard/day-slider";
 import { PageHeader } from "@/components/layout/page-header";
 import {
   ChecklistCardsSkeleton,
@@ -50,36 +51,69 @@ interface ConferenceGroup {
   rows: Row[];
 }
 
+function localToday(): string {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(
+    d.getDate(),
+  ).padStart(2, "0")}`;
+}
+
+function dateFromSearch(): string {
+  if (typeof window === "undefined") return localToday();
+  const d = new URLSearchParams(window.location.search).get("date");
+  if (d && /^\d{4}-\d{2}-\d{2}$/.test(d)) return d;
+  return localToday();
+}
+
 export default function ChecklistsPage() {
   const router = useRouter();
   const toast = useToast();
   const [checklists, setChecklists] = useState<Row[]>([]);
   const [ready, setReady] = useState(false);
+  const [today, setToday] = useState(localToday());
+  const [selected, setSelected] = useState(localToday());
   const [modalConferenceId, setModalConferenceId] = useState<number | null>(
     null,
   );
 
+  const isToday = selected === today;
+
+  useEffect(() => {
+    const fromUrl = dateFromSearch();
+    setSelected(fromUrl);
+  }, []);
+
   const load = useCallback(async () => {
     try {
-      const r = await apiFetch("/api/checklists");
+      const r = await apiFetch(`/api/checklists?date=${selected}`);
       if (r.ok) {
         const d = await r.json();
         setChecklists(d.checklists ?? []);
+        if (d.today) setToday(d.today);
       }
     } catch {
       /* keep list */
     } finally {
       setReady(true);
     }
-  }, []);
+  }, [selected]);
 
   useEffect(() => {
     load();
   }, [load]);
 
+  useEffect(() => {
+    const url = isToday ? "/checklists" : `/checklists?date=${selected}`;
+    window.history.replaceState(null, "", url);
+  }, [selected, isToday]);
+
   // Live updates: fires on every checklist.* / fault.* event so conference
   // progress bars update as staff work through their items.
-  useRealtimeRefresh(load);
+  useRealtimeRefresh(
+    useCallback(() => {
+      if (isToday) load();
+    }, [isToday, load]),
+  );
 
   const start = async (slug: string, conferenceId?: number | null) => {
     try {
@@ -88,6 +122,7 @@ export default function ChecklistsPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           slug,
+          date: selected,
           ...(conferenceId != null ? { conferenceId } : {}),
         }),
       });
@@ -137,8 +172,9 @@ export default function ChecklistsPage() {
   return (
     <div className="space-y-6">
       <PageHeader title="Checklists" />
+      <DaySlider selected={selected} today={today} onSelect={setSelected} />
 
-      {conferenceGroups.length > 0 && (
+      {isToday && conferenceGroups.length > 0 && (
         <section className="space-y-3">
           <div className="flex items-center justify-between px-1">
             <h2 className="text-[11px] font-semibold uppercase tracking-[0.14em] text-zinc-500">
@@ -204,7 +240,7 @@ export default function ChecklistsPage() {
         <section className="space-y-3">
           <div className="flex items-center justify-between px-1">
             <h2 className="text-[11px] font-semibold uppercase tracking-[0.14em] text-zinc-500">
-              Daily checklists
+              {isToday ? "Daily checklists" : "Daily checklists for this day"}
             </h2>
             <span className="text-[11px] text-zinc-600">
               {dailyRows.length} total
@@ -225,7 +261,9 @@ export default function ChecklistsPage() {
 
       {conferenceGroups.length === 0 && dailyRows.length === 0 && (
         <div className="rounded-2xl border border-dashed border-zinc-800 py-12 text-center text-sm text-zinc-500">
-          No checklists yet.
+          {isToday
+            ? "No checklists yet."
+            : "No checklists recorded for this day. Tap a card to start one."}
         </div>
       )}
     </div>

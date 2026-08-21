@@ -3,6 +3,8 @@ import { getSessionUser, logAudit } from "@/lib/auth";
 import { getDb } from "@/lib/db";
 import { sessionProgress } from "@/lib/checklists";
 import { listActiveUsersByRole } from "@/lib/user-queries";
+import { usesInventoryUserSchema } from "@/lib/users-db";
+import { archivePastConferences, localCalendarDate } from "@/lib/conferences";
 
 export async function GET(
   _req: NextRequest,
@@ -13,15 +15,31 @@ export async function GET(
 
   const { id } = await params;
   const db = getDb();
+  archivePastConferences(db);
   const conference = db
     .prepare("SELECT * FROM conferences WHERE id = ?")
-    .get(Number(id));
+    .get(Number(id)) as
+    | {
+        id: number;
+        name: string;
+        status: string;
+        start_date: string;
+        end_date: string;
+      }
+    | undefined;
   if (!conference) return NextResponse.json({ error: "Not found" }, { status: 404 });
+
+  const nameCol = usesInventoryUserSchema(db) ? "full_name" : "display_name";
 
   const sessions = db
     .prepare(
-      `SELECT s.*, t.label, t.frequency, t.completer_role FROM checklist_sessions s
+      `SELECT s.*, t.label, t.frequency, t.completer_role,
+              starter.${nameCol} AS started_by_name,
+              approver.${nameCol} AS approved_by_name
+       FROM checklist_sessions s
        JOIN checklist_types t ON t.slug = s.checklist_type_slug
+       LEFT JOIN users starter ON starter.id = s.started_by_user_id
+       LEFT JOIN users approver ON approver.id = s.approved_by_user_id
        WHERE s.conference_id = ?
        ORDER BY
          CASE t.slug
@@ -36,11 +54,30 @@ export async function GET(
          END`,
     )
     .all(Number(id)) as Array<{
-    id: number;
+    id: number | string;
     status: string;
     label: string;
     completer_role: string;
+    submitted_at: string | null;
+    approved_at: string | null;
+    started_by_name: string | null;
+    approved_by_name: string | null;
   }>;
+
+  const contributorsForSession = (sessionId: string | number) =>
+    db
+      .prepare(
+        `SELECT DISTINCT u.id AS id, u.${nameCol} AS display_name, u.username
+         FROM checklist_item_responses r
+         JOIN users u ON u.id = r.checked_by_user_id
+         WHERE r.session_id = ? AND r.checked_by_user_id IS NOT NULL
+         ORDER BY u.${nameCol}`,
+      )
+      .all(sessionId) as Array<{
+      id: string;
+      display_name: string;
+      username: string;
+    }>;
 
   // For each session, look up who is responsible (users with the completer
   // role) so the conference page can display "Assigned to: X, Y".
@@ -63,6 +100,7 @@ export async function GET(
       ...s,
       progress: sessionProgress(s.id),
       assignees: teamsByRole.get(s.completer_role) ?? [],
+      contributors: contributorsForSession(s.id),
     };
   });
 
@@ -73,10 +111,88 @@ export async function GET(
         .get() as { value: string } | undefined
     )?.value?.trim() || null;
 
+  const sessionIds = sessions.map((s) => String(s.id));
+  const labelBySession = new Map(
+    sessions.map((s) => [String(s.id), s.label] as const),
+  );
+
+  const activity: Array<{
+    action: string;
+    details: string | null;
+    created_at: string;
+    actor_name: string;
+    checklist_label: string | null;
+  }> = [];
+
+  if (sessionIds.length > 0) {
+    const placeholders = sessionIds.map(() => "?").join(",");
+    const rows = db
+      .prepare(
+        `SELECT a.action, a.details, a.created_at, a.entity_type, a.entity_id,
+                COALESCE(u.${nameCol}, u.username, 'System') AS actor_name
+           FROM audit_logs a
+           LEFT JOIN users u ON u.id = a.user_id
+          WHERE (a.entity_type = 'conference' AND a.entity_id = ?)
+             OR (a.entity_type = 'session' AND a.entity_id IN (${placeholders}))
+          ORDER BY a.created_at DESC
+          LIMIT 80`,
+      )
+      .all(String(id), ...sessionIds) as Array<{
+      action: string;
+      details: string | null;
+      created_at: string;
+      entity_type: string | null;
+      entity_id: string | null;
+      actor_name: string;
+    }>;
+    for (const row of rows) {
+      activity.push({
+        action: row.action,
+        details: row.details,
+        created_at: row.created_at,
+        actor_name: row.actor_name,
+        checklist_label:
+          row.entity_type === "session" && row.entity_id
+            ? (labelBySession.get(String(row.entity_id)) ?? null)
+            : null,
+      });
+    }
+  } else {
+    const rows = db
+      .prepare(
+        `SELECT a.action, a.details, a.created_at,
+                COALESCE(u.${nameCol}, u.username, 'System') AS actor_name
+           FROM audit_logs a
+           LEFT JOIN users u ON u.id = a.user_id
+          WHERE a.entity_type = 'conference' AND a.entity_id = ?
+          ORDER BY a.created_at DESC
+          LIMIT 80`,
+      )
+      .all(String(id)) as Array<{
+      action: string;
+      details: string | null;
+      created_at: string;
+      actor_name: string;
+    }>;
+    for (const row of rows) {
+      activity.push({
+        action: row.action,
+        details: row.details,
+        created_at: row.created_at,
+        actor_name: row.actor_name,
+        checklist_label: null,
+      });
+    }
+  }
+
+  const past = conference.end_date < localCalendarDate();
+
   return NextResponse.json({
     conference,
     sessions: withProgress,
     hotelWhatsapp,
+    activity,
+    past,
   });
 }
 

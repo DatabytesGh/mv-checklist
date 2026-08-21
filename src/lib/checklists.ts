@@ -76,7 +76,8 @@ export function ensureConferenceChecklistSessions(
     .prepare(
       `SELECT id, start_date, created_by_user_id
          FROM conferences
-         WHERE status IN ('Planning', 'Active')`,
+         WHERE status IN ('Planning', 'Active')
+           AND end_date >= date('now', 'localtime')`,
     )
     .all() as Array<{
     id: number;

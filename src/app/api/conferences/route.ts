@@ -1,16 +1,21 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest, NextResponse, after } from "next/server";
 import { getSessionUser, logAudit } from "@/lib/auth";
 import { getDb } from "@/lib/db";
+import { archivePastConferences } from "@/lib/conferences";
 import {
   conferenceChecklistSlugs,
   getOrCreateSession,
+  resolveChecklistType,
 } from "@/lib/checklists";
+import { getWhatsAppConfigStatus } from "@/lib/whatsapp";
+import { notifyConferenceCreatedToRecipients } from "@/lib/whatsapp-notify";
 
 export async function GET() {
   const user = await getSessionUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const db = getDb();
+  archivePastConferences(db);
   const conferences = db
     .prepare(
       `SELECT * FROM conferences ORDER BY datetime(created_at) DESC, id DESC`,
@@ -127,6 +132,41 @@ export async function POST(req: NextRequest) {
   }
 
   logAudit(user.id, "conference_created", "conference", String(conferenceId), body.name.trim());
+
+  if (getWhatsAppConfigStatus().configured) {
+    const checklistLabels = spawned.map((s) => {
+      const type = resolveChecklistType(db, s.checklist_type_slug);
+      return type?.label ?? s.checklist_type_slug;
+    });
+    const payload = {
+      conferenceName: body.name.trim() as string,
+      startDate: body.start_date as string,
+      endDate: body.end_date as string,
+      guestCount:
+        body.guest_count === "" || body.guest_count == null
+          ? null
+          : Number(body.guest_count),
+      creatorName: user.display_name ?? user.username,
+      checklistLabels,
+    };
+    after(async () => {
+      const results = await notifyConferenceCreatedToRecipients(db, payload);
+      for (const result of results) {
+        if (!result.ok) {
+          console.warn(
+            "[whatsapp] conference created notify failed:",
+            result.errorCode ?? "",
+            result.errorMessage ?? "unknown",
+          );
+        } else {
+          console.info(
+            "[whatsapp] conference created notify ok:",
+            result.messageId,
+          );
+        }
+      }
+    });
+  }
 
   return NextResponse.json({
     id: conferenceId,
